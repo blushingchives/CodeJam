@@ -13,10 +13,10 @@ planner and everything that improves the forecast.
 
 ## Progress
 
-**Stage 1 — steps 1–6 of 11 complete.** Next: step 7, API routes.
+**Stage 1 — steps 1–7 of 11 complete.** Next: step 8, enforcement tests.
 
-Nothing is runnable by hand yet. Step 7 is the first end-to-end run drivable from curl;
-step 9 is the first browser demo.
+**The backend is now runnable end to end against real Codex.** Start the POC, create an
+agent, then drive a workflow with the six routes below. Step 9 adds the browser UI.
 
 | | Step | State |
 | --- | --- | --- |
@@ -26,10 +26,46 @@ step 9 is the first browser demo.
 | 4 | Store extension and restart recovery | Done — 3 tests |
 | 5 | Orchestrator | Done — 7 tests |
 | 6 | Agent lock integration | Done — 4 tests |
-| 7 | API routes | Next — **first end-to-end run** |
-| 8–11 | Enforcement tests, UI, hardening, docs | Not started |
+| 7 | API routes | Done — 4 tests |
+| 8 | Enforcement tests | Next |
+| 9–11 | UI, hardening, docs | Not started |
 
-54 tests, 53 passing.
+58 tests, 57 passing.
+
+## Trying it by hand
+
+```bash
+ARK_API_KEY=… ARK_MODEL=ep-… ./scripts/start-local-poc.sh
+
+# Use a FRESH agent — an existing one resumes its old thread and the token
+# numbers stop being legible.
+AGENT=$(curl -sX POST localhost:3000/api/agents \
+  -H 'content-type: application/json' \
+  -d '{"name":"Runway demo"}' | jq -r .agent.id)
+
+WF=$(curl -sX POST localhost:3000/api/agents/$AGENT/budget-workflows \
+  -H 'content-type: application/json' -d '{
+    "prompt": "add a health endpoint",
+    "tokenBudget": 10000,
+    "tasks": [
+      {"title":"Inspect","instruction":"List the files in this workspace. Do not modify anything.","weight":1},
+      {"title":"Implement","instruction":"Create health.txt containing OK.","weight":4},
+      {"title":"Verify","instruction":"Print the contents of health.txt.","weight":3}
+    ]}' | jq -r .workflow.id)
+
+curl -sX POST localhost:3000/api/budget-workflows/$WF/start
+curl -s localhost:3000/api/budget-workflows/$WF | jq '.workflow.budgetState, .workflow.status'
+
+# When it pauses:
+curl -sX POST localhost:3000/api/budget-workflows/$WF/budget \
+  -H 'content-type: application/json' -d '{"totalTokenBudget":50000}'
+curl -sX POST localhost:3000/api/budget-workflows/$WF/resume
+curl -s localhost:3000/api/budget-workflows/$WF | jq '.events[] | {type, reason}'
+```
+
+**Check on the first real run:** whether `cachedInputTokens` on turn 2+ is a subset of
+`inputTokens`. If it ever exceeds it, the step 1 subtraction is wrong and the clamp is
+hiding it.
 
 Known issue: `npm run check` fails on Windows only, in a pre-existing test
 (`container-codex-runner.test.ts:36`) that hardcodes POSIX paths while `config.codexHome`
@@ -238,15 +274,25 @@ block the request.
 
 The browser must never hold state that decides admission.
 
-- [ ] `POST /api/agents/:agentId/budget-workflows` — body carries `tasks[]`
-- [ ] `POST /api/budget-workflows/:id/start`
-- [ ] `GET /api/budget-workflows/:id` — status, tasks, budget, forecast, events
-- [ ] `POST /api/budget-workflows/:id/budget` — validates new budget ≥ consumed, emits
+- [x] `POST /api/agents/:id/budget-workflows` — body carries `tasks[]`
+- [x] `POST /api/budget-workflows/:id/start`
+- [x] `GET /api/budget-workflows/:id` — status, tasks, budget, forecast, events
+- [x] `POST /api/budget-workflows/:id/budget` — validates new budget ≥ consumed, emits
       `BUDGET_UPDATED`
-- [ ] `POST /api/budget-workflows/:id/resume` — **re-evaluates**, never trusts the
+- [x] `POST /api/budget-workflows/:id/resume` — **re-evaluates**, never trusts the
       earlier approval
-- [ ] `POST /api/budget-workflows/:id/stop`
-- [ ] Zod bodies matching existing `app.ts` conventions
+- [x] `POST /api/budget-workflows/:id/stop`
+- [x] Zod bodies matching existing `app.ts` conventions
+
+Also added: `GET /api/agents/:id/budget-workflows` to list an agent's runs, for the UI.
+
+Budget update and resume are deliberately **separate acts**. Raising the budget records an
+approval and re-forecasts, but admits nothing; resume recomputes from current measurements
+against the current budget and continues only if policy now permits. Raising the budget by
+too little leaves the workflow paused — there is an API test for exactly that.
+
+`index.ts` passes the **same runner instance** to both services, so the Playground and a
+budgeted workflow contend for one agent instead of quietly running two turns on one thread.
 
 **Exit:** the whole lifecycle is drivable from curl, with no UI in the loop.
 

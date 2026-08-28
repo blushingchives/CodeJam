@@ -1,6 +1,7 @@
 import path from "node:path";
 import { AgentService } from "./agent-service.js";
 import { createApp } from "./app.js";
+import { BudgetWorkflowService } from "./budget/budget-workflow-service.js";
 import { loadConfig, writeCodexConfig } from "./config.js";
 import { createRunner } from "./runner-factory.js";
 import { JsonStore } from "./store.js";
@@ -15,7 +16,11 @@ const runner = createRunner(config);
 const service = new AgentService(config, store, workspaces, runner);
 await service.initialize();
 
-const app = await createApp(config, service);
+// The same runner instance backs both, so the Playground and a budgeted workflow
+// contend for one agent rather than quietly running two turns on one thread.
+const budgetWorkflows = new BudgetWorkflowService(store, runner);
+
+const app = await createApp(config, service, budgetWorkflows);
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "Shutting down");

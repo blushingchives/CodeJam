@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import type { AgentService } from "./agent-service.js";
+import type { BudgetWorkflowService } from "./budget/budget-workflow-service.js";
 
 const agentIdParams = z.object({ id: z.string().uuid() });
 const runIdParams = z.object({ id: z.string().uuid() });
@@ -22,10 +23,20 @@ const updateAgentBody = createAgentBody.partial().refine(
 const messageBody = z.object({
   content: z.string().trim().min(1).max(50_000),
 });
+const createBudgetWorkflowBody = z.object({
+  prompt: z.string().trim().min(1).max(50_000),
+  tokenBudget: z.number().int().positive(),
+  // Left unknown here so plan validation reports which task and field is wrong.
+  tasks: z.unknown(),
+});
+const budgetUpdateBody = z.object({
+  totalTokenBudget: z.number().int().positive(),
+});
 
 export async function createApp(
   config: AppConfig,
   service: AgentService,
+  budgetWorkflows: BudgetWorkflowService,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -126,6 +137,55 @@ export async function createApp(
   app.get("/api/runs/:id", async (request) => {
     const { id } = runIdParams.parse(request.params);
     return { run: service.getRun(id) };
+  });
+
+  app.get("/api/agents/:id/budget-workflows", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    service.getAgent(id);
+    return { workflows: budgetWorkflows.listWorkflows(id) };
+  });
+
+  app.post("/api/agents/:id/budget-workflows", async (request, reply) => {
+    const { id } = agentIdParams.parse(request.params);
+    const body = createBudgetWorkflowBody.parse(request.body);
+    const workflow = await budgetWorkflows.create({
+      agentId: id,
+      prompt: body.prompt,
+      tokenBudget: body.tokenBudget,
+      tasks: body.tasks,
+    });
+    return reply.code(201).send({ workflow });
+  });
+
+  app.get("/api/budget-workflows/:id", async (request) => {
+    const { id } = runIdParams.parse(request.params);
+    return {
+      workflow: budgetWorkflows.getWorkflow(id),
+      events: budgetWorkflows.getEvents(id),
+    };
+  });
+
+  app.post("/api/budget-workflows/:id/start", async (request, reply) => {
+    const { id } = runIdParams.parse(request.params);
+    const workflow = await budgetWorkflows.start(id);
+    return reply.code(202).send({ workflow });
+  });
+
+  app.post("/api/budget-workflows/:id/budget", async (request) => {
+    const { id } = runIdParams.parse(request.params);
+    const body = budgetUpdateBody.parse(request.body);
+    return { workflow: await budgetWorkflows.updateBudget(id, body.totalTokenBudget) };
+  });
+
+  app.post("/api/budget-workflows/:id/resume", async (request, reply) => {
+    const { id } = runIdParams.parse(request.params);
+    const workflow = await budgetWorkflows.resume(id);
+    return reply.code(202).send({ workflow });
+  });
+
+  app.post("/api/budget-workflows/:id/stop", async (request) => {
+    const { id } = runIdParams.parse(request.params);
+    return { workflow: await budgetWorkflows.stop(id) };
   });
 
   if (config.nodeEnv === "production") {

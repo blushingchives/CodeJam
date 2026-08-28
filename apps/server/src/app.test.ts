@@ -2,17 +2,21 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import type { AgentService } from "./agent-service.js";
+import type { BudgetWorkflowService } from "./budget/budget-workflow-service.js";
 
 const service = {
   listAgents: () => [],
   systemInfo: async () => ({}),
 } as unknown as AgentService;
 
+const budgetWorkflows = {} as unknown as BudgetWorkflowService;
+
 describe("HTTP boundary", () => {
   it("protects API routes with the configured shared token", async () => {
     const app = await createApp(
       loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-test-token" }),
       service,
+      budgetWorkflows,
     );
     const denied = await app.inject({ method: "GET", url: "/api/agents" });
     expect(denied.statusCode).toBe(401);

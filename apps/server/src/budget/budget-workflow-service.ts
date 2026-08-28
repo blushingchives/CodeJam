@@ -228,6 +228,119 @@ export class BudgetWorkflowService {
   }
 
   /**
+   * Change the ceiling. This records an approval; it does not resume anything,
+   * so the decision to continue stays a separate, re-evaluated act.
+   */
+  async updateBudget(
+    workflowId: string,
+    totalTokenBudget: number,
+  ): Promise<BudgetWorkflow> {
+    const timestamp = now();
+    await this.store.mutate((database) => {
+      const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
+      if (!workflow) {
+        throw new HttpError(404, "Budget workflow not found");
+      }
+      if (TERMINAL_STATUSES.has(workflow.status)) {
+        throw new HttpError(409, "This workflow has already finished");
+      }
+
+      const consumedTokens = deriveBudgetInput(workflow).consumedTokens;
+      if (!canApplyBudget(totalTokenBudget, consumedTokens)) {
+        throw new HttpError(
+          400,
+          "A budget must be positive and no lower than the " +
+            consumedTokens +
+            " tokens already consumed",
+        );
+      }
+
+      workflow.policy = { ...workflow.policy, totalTokenBudget };
+      workflow.budgetState = evaluateBudget(deriveBudgetInput(workflow));
+      workflow.updatedAt = timestamp;
+      database.budgetEvents.push(
+        makeEvent(workflowId, "BUDGET_UPDATED", timestamp, {
+          consumedTokens,
+          configuredBudget: totalTokenBudget,
+          ...(workflow.budgetState.projectedTotalTokens === null
+            ? {}
+            : { projectedTotalTokens: workflow.budgetState.projectedTotalTokens }),
+          reason: "Budget updated to " + totalTokenBudget + " tokens.",
+        }),
+      );
+    });
+    return this.getWorkflow(workflowId);
+  }
+
+  /**
+   * Re-evaluate a paused workflow and continue only if policy now permits it.
+   *
+   * An earlier approval is never carried forward: the forecast is recomputed from
+   * current measurements against the current budget, so raising the budget by too
+   * little leaves the workflow paused rather than admitting one more task.
+   */
+  async resume(workflowId: string): Promise<BudgetWorkflow> {
+    const timestamp = now();
+    const outcome = await this.store.mutate((database) => {
+      const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
+      if (!workflow) {
+        throw new HttpError(404, "Budget workflow not found");
+      }
+      if (workflow.status !== "PAUSED_BUDGET_APPROVAL") {
+        throw new HttpError(409, "Only a paused workflow can be resumed");
+      }
+
+      const state = evaluateBudget(deriveBudgetInput(workflow));
+      workflow.budgetState = state;
+      workflow.updatedAt = timestamp;
+
+      if (state.decision === "COMPLETE") {
+        workflow.status = "COMPLETED";
+        database.budgetEvents.push(
+          makeEvent(workflowId, "COMPLETED", timestamp, {
+            consumedTokens: state.consumedTokens,
+            configuredBudget: workflow.policy.totalTokenBudget,
+            reason: state.reason,
+          }),
+        );
+        return "completed" as const;
+      }
+
+      if (!admitsNextTask(state.decision)) {
+        database.budgetEvents.push(
+          makeEvent(workflowId, "PAUSED", timestamp, {
+            consumedTokens: state.consumedTokens,
+            configuredBudget: workflow.policy.totalTokenBudget,
+            ...(state.projectedTotalTokens === null
+              ? {}
+              : { projectedTotalTokens: state.projectedTotalTokens }),
+            reason: "Resume refused. " + state.reason,
+          }),
+        );
+        return "refused" as const;
+      }
+
+      workflow.status = "READY";
+      database.budgetEvents.push(
+        makeEvent(workflowId, "RESUMED", timestamp, {
+          consumedTokens: state.consumedTokens,
+          configuredBudget: workflow.policy.totalTokenBudget,
+          ...(state.projectedTotalTokens === null
+            ? {}
+            : { projectedTotalTokens: state.projectedTotalTokens }),
+          reason: state.reason,
+        }),
+      );
+      return "resumed" as const;
+    });
+
+    if (outcome !== "resumed") {
+      return this.getWorkflow(workflowId);
+    }
+    return this.start(workflowId);
+  }
+
+  /**
    * Take the agent for the duration of the workflow.
    *
    * The workflow and the Playground share one agent and one Codex thread, so a
