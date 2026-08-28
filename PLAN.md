@@ -11,6 +11,26 @@ Two stages. Stage 1 builds the rate limiter and nothing else: plans are supplied
 operator, so the only variable in the system is real token usage. Stage 2 adds the
 planner and everything that improves the forecast.
 
+## Progress
+
+**Stage 1 — steps 1–4 of 11 complete.** Next: step 5, the orchestrator.
+
+Nothing is runnable by hand yet. Step 7 is the first end-to-end run drivable from curl;
+step 9 is the first browser demo.
+
+| | Step | State |
+| --- | --- | --- |
+| 1 | Usage normalizer | Done — 7 tests |
+| 2 | BudgetController | Done — 12 tests |
+| 3 | Plan schema and workflow model | Done — 9 tests |
+| 4 | Store extension and restart recovery | Done |
+| 5 | Orchestrator | Next |
+| 6–11 | Agent lock, routes, enforcement tests, UI, hardening, docs | Not started |
+
+Known issue: `npm run check` fails on Windows only, in a pre-existing test
+(`container-codex-runner.test.ts:36`) that hardcodes POSIX paths while `config.codexHome`
+goes through `path.resolve()`. Unrelated to this work; passes on Linux and in Docker.
+
 ---
 
 ## Already in the repo — do not rebuild
@@ -67,11 +87,17 @@ Steps are dependency-ordered. Each has a testable exit gate.
 `RunUsage` has three *optional* fields and no total. Every forecast divides by this
 number, so an `undefined` quietly coerced to `0` corrupts every decision downstream.
 
-- [ ] Define `UsageRecord { inputTokens, outputTokens, totalTokens }`
-- [ ] `normalizeUsage(RunUsage | null): UsageRecord | null` — returns **null**, never
+- [x] Define `UsageRecord { inputTokens, outputTokens, totalTokens }`
+- [x] `normalizeUsage(RunUsage | null): UsageRecord | null` — returns **null**, never
       zero, when both counts are absent
-- [ ] Exclude `cachedInputTokens` from the total; store it separately
-- [ ] Tests: complete, partial, empty, null
+- [x] Exclude `cachedInputTokens` from the total; store it separately
+- [x] Tests: complete, partial, empty, null
+
+`cachedInputTokens` is a *subset* of `inputTokens`, so exclusion means subtraction:
+`billableInputTokens = inputTokens - cachedInputTokens` (floored at zero), and
+`totalTokens = billableInputTokens + outputTokens`. The record keeps all four numbers, so
+the assumption is reversible in one line. **Still unverified against a real cached turn** —
+check it on the first second-turn in step 5.
 
 **Exit:** a real runner result yields either a trustworthy number or an explicit null.
 
@@ -82,12 +108,21 @@ number, so an `undefined` quietly coerced to `0` corrupts every decision downstr
 The trusted decision point, and the one component the entire demo rests on. Pure — no
 I/O, no store, no async — so it is completely testable before anything else exists.
 
-- [ ] Types: `TokenBudgetPolicy`, `BudgetState`, `BudgetDecision`
-- [ ] `evaluate()` in strict order: hard stop → no forecast → rate → projection → pause
-      → warn → allow
-- [ ] Weight validation: integers, 1–10
-- [ ] Eight unit tests: first task, under budget, warn band, predictive pause, hard stop,
+- [x] Types: `TokenBudgetPolicy`, `BudgetState`, `BudgetDecision`
+- [x] `evaluate()` in strict order — see the ordering note below
+- [x] Weight validation: integers, 1–10
+- [x] Eight unit tests: first task, under budget, warn band, predictive pause, hard stop,
       complete, invalid weights, budget floor
+
+**Ordering deviation:** `COMPLETE` is checked *before* `HARD_STOP`, not after. A workflow
+that finishes all its work having spent exactly its budget would otherwise report
+`HARD_STOP` and be marked as stopped rather than completed. Nothing is admitted either
+way — there is no task left — so it costs no safety. This relies on weights being ≥ 1,
+which makes `remainingWeight === 0` equivalent to "no pending tasks"; a test pins that.
+
+`admitsNextTask(decision)` is the orchestrator's only question: `ALLOW` and `WARN` admit,
+`PAUSE` / `HARD_STOP` / `COMPLETE` do not. Projections are rounded *before* the ratio is
+computed, so the numbers in an event always reproduce the decision they justify.
 
 **Exit:** every forecast test passes against a controller that has never touched a
 database.
@@ -99,9 +134,21 @@ database.
 The same Zod schema validates operator input now and planner output later. Writing it
 once is what makes Stage 2 additive instead of a refactor.
 
-- [ ] Schema: 1–12 tasks, integer weight 1–10, title and instruction both required
-- [ ] Model `BudgetWorkflow`, `PlannedTask`, `BudgetEvent` and the status enums
-- [ ] Keep `PLANNING` in the enum though nothing sets it yet
+- [x] Schema: 1–12 tasks, integer weight 1–10, title and instruction both required
+- [x] Model `BudgetWorkflow`, `PlannedTask`, `BudgetEvent` and the status enums
+- [x] Keep `PLANNING` in the enum though nothing sets it yet
+
+`parsePlan()` returns errors rather than throwing — a route needs them for a 400, and the
+Stage 2 planner retry quotes them back to the model. It accepts a bare array *or* the
+`{ "tasks": [...] }` envelope, so one validator serves both sources. Errors name the exact
+task and field (`tasks[1].weight: weight must be at least 1`) and report in one pass.
+
+Two event types were added beyond the original spec — `TASK_FAILED` and `FAILED` — because
+step 10 requires failures to be recorded and the original list could not express them.
+
+Deferred deliberately: `planningTokens` on the workflow (Stage 2, and the store defaults
+new fields on load), and deriving weights from a workflow's tasks (step 5, where it is
+used).
 
 **Exit:** a malformed plan is rejected with a message naming the task and the field.
 

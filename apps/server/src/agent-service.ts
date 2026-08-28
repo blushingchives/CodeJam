@@ -43,6 +43,31 @@ export class AgentService {
           agent.updatedAt = now();
         }
       }
+      for (const workflow of database.budgetWorkflows) {
+        if (workflow.status !== "RUNNING" && workflow.status !== "PLANNING") {
+          continue;
+        }
+        const timestamp = now();
+        const reason = "Server restarted while this workflow was running";
+        for (const task of workflow.tasks) {
+          if (task.status === "RUNNING") {
+            task.status = "FAILED";
+            task.error = reason;
+            task.completedAt = timestamp;
+          }
+        }
+        workflow.status = "FAILED";
+        workflow.updatedAt = timestamp;
+        database.budgetEvents.push({
+          id: randomUUID(),
+          workflowId: workflow.id,
+          type: "FAILED",
+          timestamp,
+          consumedTokens: workflow.budgetState.consumedTokens,
+          configuredBudget: workflow.policy.totalTokenBudget,
+          reason,
+        });
+      }
     });
   }
 

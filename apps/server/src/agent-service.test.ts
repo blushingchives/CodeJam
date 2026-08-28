@@ -3,6 +3,11 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentService } from "./agent-service.js";
+import {
+  DEFAULT_BUDGET_POLICY,
+  evaluateBudget,
+} from "./budget/budget-controller.js";
+import type { BudgetWorkflow } from "./budget/types.js";
 import { loadConfig } from "./config.js";
 import { JsonStore } from "./store.js";
 import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
@@ -55,6 +60,66 @@ async function makeService(runner: AgentRunner = new FakeRunner()): Promise<Agen
   await service.initialize();
   return service;
 }
+
+describe("Restart recovery", () => {
+  it("fails interrupted workflows and leaves a paused one awaiting approval", async () => {
+    const service = await makeService();
+    const store = (service as unknown as { store: JsonStore }).store;
+    const policy = { ...DEFAULT_BUDGET_POLICY, totalTokenBudget: 10_000 };
+    const timestamp = new Date().toISOString();
+
+    const workflow = (id: string, status: BudgetWorkflow["status"]): BudgetWorkflow => ({
+      id,
+      agentId: "agent-1",
+      codexThreadId: "thread-1",
+      originalPrompt: "implement the feature",
+      status,
+      tasks: [
+        {
+          id: id + "-task-1",
+          index: 0,
+          title: "Implement backend",
+          instruction: "Implement the backend changes.",
+          weight: 4,
+          status: status === "RUNNING" ? "RUNNING" : "PENDING",
+          usage: null,
+          error: null,
+          startedAt: timestamp,
+          completedAt: null,
+        },
+      ],
+      policy,
+      budgetState: evaluateBudget({
+        policy,
+        consumedTokens: 4_200,
+        completedWeight: 1,
+        remainingWeight: 4,
+      }),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    await store.mutate((database) => {
+      database.budgetWorkflows.push(
+        workflow("interrupted", "RUNNING"),
+        workflow("awaiting", "PAUSED_BUDGET_APPROVAL"),
+      );
+    });
+
+    await service.initialize();
+    const database = store.snapshot();
+    const interrupted = database.budgetWorkflows.find((item) => item.id === "interrupted");
+    const awaiting = database.budgetWorkflows.find((item) => item.id === "awaiting");
+
+    expect(interrupted?.status).toBe("FAILED");
+    expect(interrupted?.tasks[0]?.status).toBe("FAILED");
+    expect(interrupted?.tasks[0]?.error).toContain("Server restarted");
+    expect(database.budgetEvents.map((event) => event.type)).toEqual(["FAILED"]);
+
+    expect(awaiting?.status).toBe("PAUSED_BUDGET_APPROVAL");
+    expect(awaiting?.tasks[0]?.status).toBe("PENDING");
+  });
+});
 
 describe("Agent lifecycle", () => {
   it("creates, updates, stops, starts and deletes an Agent", async () => {

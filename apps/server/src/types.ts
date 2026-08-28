@@ -1,3 +1,5 @@
+import type { BudgetEvent, BudgetWorkflow } from "./budget/types.js";
+
 export type AgentStatus = "ready" | "busy" | "stopped" | "error";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type MessageRole = "user" | "assistant";
@@ -48,6 +50,8 @@ export interface Database {
   agents: Agent[];
   messages: Message[];
   runs: AgentRun[];
+  budgetWorkflows: BudgetWorkflow[];
+  budgetEvents: BudgetEvent[];
 }
 
 export interface CreateAgentInput {

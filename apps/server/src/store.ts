@@ -7,7 +7,32 @@ const emptyDatabase = (): Database => ({
   agents: [],
   messages: [],
   runs: [],
+  budgetWorkflows: [],
+  budgetEvents: [],
 });
+
+/**
+ * Fill collections a stored file predates.
+ *
+ * A database written before a collection existed parses without it, and the first
+ * push against the missing array would throw. Defaulting on load keeps older files
+ * readable without a migration step.
+ */
+const withDefaults = (parsed: Partial<Database>): Database => {
+  const empty = emptyDatabase();
+  return {
+    version: 1,
+    agents: Array.isArray(parsed.agents) ? parsed.agents : empty.agents,
+    messages: Array.isArray(parsed.messages) ? parsed.messages : empty.messages,
+    runs: Array.isArray(parsed.runs) ? parsed.runs : empty.runs,
+    budgetWorkflows: Array.isArray(parsed.budgetWorkflows)
+      ? parsed.budgetWorkflows
+      : empty.budgetWorkflows,
+    budgetEvents: Array.isArray(parsed.budgetEvents)
+      ? parsed.budgetEvents
+      : empty.budgetEvents,
+  };
+};
 
 export class JsonStore {
   private data: Database = emptyDatabase();
@@ -23,7 +48,7 @@ export class JsonStore {
       if (parsed.version !== 1 || !Array.isArray(parsed.agents)) {
         throw new Error("Unsupported database format");
       }
-      this.data = parsed;
+      this.data = withDefaults(parsed);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
