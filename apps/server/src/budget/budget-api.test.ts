@@ -229,6 +229,52 @@ describe("Budget workflow HTTP lifecycle", () => {
     expect(lowered.statusCode).toBe(409);
   });
 
+  it("admits each task once when start is clicked twice", async () => {
+    const runner = new ScriptedRunner();
+    const { app, agentId } = await makeApp(runner);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/agents/" + agentId + "/budget-workflows",
+      payload: { prompt: "implement", tokenBudget: 100_000, tasks: plan },
+    });
+    const workflowId = (created.json() as { workflow: { id: string } }).workflow.id;
+    const url = "/api/budget-workflows/" + workflowId + "/start";
+
+    const [first, second] = await Promise.all([
+      app.inject({ method: "POST", url }),
+      app.inject({ method: "POST", url }),
+    ]);
+    expect([first?.statusCode, second?.statusCode]).toEqual([202, 202]);
+
+    await expect
+      .poll(async () => (await readWorkflow(app, workflowId)).workflow.status)
+      .toBe("COMPLETED");
+    expect(runner.calls).toBe(4);
+  });
+
+  it("refuses to resume a workflow that already finished", async () => {
+    const { app, agentId } = await makeApp(new ScriptedRunner());
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/agents/" + agentId + "/budget-workflows",
+      payload: { prompt: "implement", tokenBudget: 100_000, tasks: plan },
+    });
+    const workflowId = (created.json() as { workflow: { id: string } }).workflow.id;
+
+    await app.inject({ method: "POST", url: "/api/budget-workflows/" + workflowId + "/start" });
+    await expect
+      .poll(async () => (await readWorkflow(app, workflowId)).workflow.status)
+      .toBe("COMPLETED");
+
+    const resumed = await app.inject({
+      method: "POST",
+      url: "/api/budget-workflows/" + workflowId + "/resume",
+    });
+    expect(resumed.statusCode).toBe(409);
+  });
+
   it("returns 404 for an unknown workflow", async () => {
     const { app } = await makeApp(new ScriptedRunner());
     const response = await app.inject({

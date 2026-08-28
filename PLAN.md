@@ -13,7 +13,7 @@ planner and everything that improves the forecast.
 
 ## Progress
 
-**Stage 1 — steps 1–7 of 11 complete.** Next: step 8, enforcement tests.
+**Stage 1 — steps 1–8 of 11 complete.** Next: step 9, the browser UI.
 
 **The backend is now runnable end to end against real Codex.** Start the POC, create an
 agent, then drive a workflow with the six routes below. Step 9 adds the browser UI.
@@ -27,10 +27,19 @@ agent, then drive a workflow with the six routes below. Step 9 adds the browser 
 | 5 | Orchestrator | Done — 7 tests |
 | 6 | Agent lock integration | Done — 4 tests |
 | 7 | API routes | Done — 4 tests |
-| 8 | Enforcement tests | Next |
-| 9–11 | UI, hardening, docs | Not started |
+| 8 | Enforcement tests | Done — 8 tests |
+| 9 | Minimum UI | Next — **first browser demo** |
+| 10–11 | Hardening, docs | Not started |
 
-58 tests, 57 passing.
+66 tests, 65 passing.
+
+Two known nuisances, neither caused by this work:
+
+- `container-codex-runner.test.ts:36` fails on Windows only (POSIX paths vs
+  `path.resolve`). It is the sole failure and it blocks step 10's `npm run check` gate.
+- Vitest occasionally crashes the whole run at collection with
+  `Cannot read properties of undefined (reading 'config')`. Transient, recovers on
+  re-run; likely worker-pool contention on Windows.
 
 ## Trying it by hand
 
@@ -303,11 +312,18 @@ budgeted workflow contend for one agent instead of quietly running two turns on 
 The product claim is that a paused workflow cannot reach the runner. This is the test
 that proves it, and the reason to spy rather than assert on status alone.
 
-- [ ] Paused workflow → start and resume → runner spy records **zero** calls
-- [ ] Raise the budget, resume → runner called only if policy now allows
-- [ ] A stopped workflow never calls the runner
-- [ ] Usage stored, forecast recalculated, events emitted in order
-- [ ] API-level: malformed budget, resume after completion, duplicate start
+- [x] Paused workflow → start and resume → runner spy records **zero** calls
+- [x] Raise the budget, resume → runner called only if policy now allows
+- [x] A stopped workflow never calls the runner
+- [x] Usage stored, forecast recalculated, events emitted in order
+- [x] API-level: malformed budget, resume after completion, duplicate start
+
+Lives in `budget/budget-enforcement.test.ts`, named for the claim it proves so a reviewer
+can open one file and read the evidence. Every test counts **calls on the runner** rather
+than inspecting status: a correct status with a spent token is not the property claimed.
+
+Also covered: the hard limit stops admission even when consumption overran in a single
+task, and a raised-but-still-insufficient budget refuses to admit anything.
 
 **Exit:** `npm run test` is the evidence that the trust boundary holds.
 
