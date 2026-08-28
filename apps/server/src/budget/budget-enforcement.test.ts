@@ -144,7 +144,9 @@ describe("Trust boundary: the runner is unreachable without admission", () => {
     expect(service.getWorkflow(workflowId).status).toBe("COMPLETED");
   });
 
-  it("stops on the hard limit even before a forecast could be consulted", async () => {
+  it("halts admission on the hard limit, and stays recoverable", async () => {
+    // One task outspends the whole budget. Prediction cannot catch this: the
+    // check happens between tasks, and nothing caps a single turn.
     const runner = new SpyRunner([{ inputTokens: 6_000, outputTokens: 0 }]);
     const { service, agentId } = await makeService(runner);
     const created = await service.create({
@@ -156,12 +158,22 @@ describe("Trust boundary: the runner is unreachable without admission", () => {
 
     const workflow = await service.runUntilBlocked(created.id);
 
-    expect(workflow.status).toBe("STOPPED");
+    expect(workflow.status).toBe("PAUSED_BUDGET_APPROVAL");
     expect(workflow.budgetState.decision).toBe("HARD_STOP");
     expect(runner.callCount).toBe(1);
 
-    await service.start(created.id);
+    // No further task is admitted while the hard limit stands.
+    await expect(service.start(created.id)).rejects.toThrow(/paused/i);
+    await service.resume(created.id);
     expect(runner.callCount).toBe(1);
+
+    // Raising the budget clears the hard limit and the forecast takes over.
+    await service.updateBudget(created.id, 100_000);
+    await service.resume(created.id);
+    await service.runUntilBlocked(created.id);
+
+    expect(runner.callCount).toBe(4);
+    expect(service.getWorkflow(created.id).status).toBe("COMPLETED");
   });
 
   it("admits nothing after an operator stop", async () => {

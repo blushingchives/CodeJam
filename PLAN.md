@@ -481,6 +481,11 @@ Write these into the README rather than discovering them on day three.
   already in flight. A single task can exceed the budget, caught only afterward by the
   hard limit. `buildCodexArgs` passes no max-tokens flag and the model is fixed in static
   TOML, so there is no per-turn ceiling to configure.
+- **Every budget decision is recoverable.** A hard stop pauses for approval rather than
+  ending the run: it halts admission of further tasks, and the operator can raise the
+  budget and resume, exactly as with a predicted overrun. `STOPPED` therefore means only
+  that a human stopped the run or the Agent was withdrawn — never that a budget was hit.
+  This deviates from the original state machine, which made the hard limit terminal.
 - **Single agent, sequential.** The rate calculation assumes one serial stream.
   Concurrent workflows on separate agents each need their own budget.
 - **Planning cost is not cleanly separable.** Once the planner shares the execution

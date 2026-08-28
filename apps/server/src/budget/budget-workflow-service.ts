@@ -470,20 +470,14 @@ export class BudgetWorkflowService {
     workflowId: string,
     state: ReturnType<typeof evaluateBudget>,
   ): Promise<void> {
+    // A hard stop pauses for approval rather than ending the workflow. It halts
+    // admission of further tasks, but the operator can raise the budget and
+    // resume, exactly as with a predicted overrun. `STOPPED` is reserved for a
+    // human stopping the run or the Agent being withdrawn.
     const status =
-      state.decision === "COMPLETE"
-        ? "COMPLETED"
-        : state.decision === "PAUSE"
-          ? "PAUSED_BUDGET_APPROVAL"
-          : state.decision === "HARD_STOP"
-            ? "STOPPED"
-            : "PAUSED_BUDGET_APPROVAL";
+      state.decision === "COMPLETE" ? "COMPLETED" : "PAUSED_BUDGET_APPROVAL";
     const type: BudgetEventType =
-      state.decision === "COMPLETE"
-        ? "COMPLETED"
-        : state.decision === "HARD_STOP"
-          ? "STOPPED"
-          : "PAUSED";
+      state.decision === "COMPLETE" ? "COMPLETED" : "PAUSED";
 
     await this.store.mutate((database) => {
       const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
