@@ -13,7 +13,7 @@ planner and everything that improves the forecast.
 
 ## Progress
 
-**Stage 1 — steps 1–4 of 11 complete.** Next: step 5, the orchestrator.
+**Stage 1 — steps 1–5 of 11 complete.** Next: step 6, agent lock integration.
 
 Nothing is runnable by hand yet. Step 7 is the first end-to-end run drivable from curl;
 step 9 is the first browser demo.
@@ -23,9 +23,12 @@ step 9 is the first browser demo.
 | 1 | Usage normalizer | Done — 7 tests |
 | 2 | BudgetController | Done — 12 tests |
 | 3 | Plan schema and workflow model | Done — 9 tests |
-| 4 | Store extension and restart recovery | Done |
-| 5 | Orchestrator | Next |
-| 6–11 | Agent lock, routes, enforcement tests, UI, hardening, docs | Not started |
+| 4 | Store extension and restart recovery | Done — 3 tests |
+| 5 | Orchestrator | Done — 7 tests |
+| 6 | Agent lock integration | Next |
+| 7–11 | Routes, enforcement tests, UI, hardening, docs | Not started |
+
+50 tests, 49 passing.
 
 Known issue: `npm run check` fails on Windows only, in a pre-existing test
 (`container-codex-runner.test.ts:36`) that hardcodes POSIX paths while `config.codexHome`
@@ -176,12 +179,26 @@ running.
 Where enforcement physically sits — an explicit loop, not recursion, with the controller
 consulted between every pair of tasks.
 
-- [ ] `create()` validates the supplied plan, persists it, lands in `READY`
-- [ ] `runUntilBlocked()`: evaluate → mark running → call runner with thread id →
+- [x] `create()` validates the supplied plan, persists it, lands in `READY`
+- [x] `runUntilBlocked()`: evaluate → mark running → call runner with thread id →
       normalize usage → persist → recalculate → emit → repeat
-- [ ] Exit the loop on completion, pause, hard stop, task failure, or stop request
-- [ ] Write the thread id back after each task (mirroring `agent-service.ts:271`)
-- [ ] Refuse re-entry while a task is already running
+- [x] Exit the loop on completion, pause, hard stop, task failure, or stop request
+- [x] Write the thread id back after each task (mirroring `agent-service.ts:271`)
+- [x] Refuse re-entry while a task is already running
+
+`deriveBudgetInput()` (deferred from step 3) reduces a workflow's tasks to the three
+numbers the controller decides on. A completed task whose usage was never reported
+contributes **neither cost nor weight**, so the observed rate stays a ratio of measured
+tokens to measured work rather than being diluted by work nobody could price.
+
+**Pulled forward from step 10:** a task that completes without reported usage pauses the
+workflow instead of being treated as free. Building it later would have meant building on
+a silently under-counting foundation. Resume still works — the unmeasured task is excluded
+from the rate, so an operator who approves continuation gets an honest forecast from
+whatever was measured.
+
+The thread id is written back to both the workflow (for audit) and the agent (so the
+Playground stays on the same conversation), matching existing runner behaviour.
 
 **Exit:** a four-task workflow runs to completion on one thread with usage recorded per
 task.
