@@ -165,6 +165,25 @@ export class BudgetWorkflowService {
   }
 
   /**
+   * Claim the agent for this workflow and start executing, without waiting for
+   * the plan to finish. The claim is taken before returning, so a second caller
+   * is rejected rather than racing, but the loop itself runs detached.
+   */
+  async start(workflowId: string): Promise<BudgetWorkflow> {
+    const claim = await this.claimAgent(workflowId);
+    if (claim === "already-running" || claim === "finished") {
+      return this.getWorkflow(workflowId);
+    }
+
+    const execution = this.execute(workflowId).finally(() =>
+      this.releaseAgent(workflowId),
+    );
+    this.active.set(workflowId, execution);
+    void execution.catch(() => undefined);
+    return this.getWorkflow(workflowId);
+  }
+
+  /**
    * Execute admitted tasks until the workflow can no longer proceed.
    *
    * Returns when the plan completes, the forecast pauses it, the hard limit trips,
@@ -172,31 +191,126 @@ export class BudgetWorkflowService {
    * rather than starting a second one.
    */
   async runUntilBlocked(workflowId: string): Promise<BudgetWorkflow> {
-    const inFlight = this.active.get(workflowId);
-    if (inFlight) {
-      await inFlight;
-      return this.getWorkflow(workflowId);
-    }
-
-    const workflow = this.getWorkflow(workflowId);
-    if (workflow.tasks.some((task) => task.status === "RUNNING")) {
-      throw new HttpError(409, "A task in this workflow is already running");
-    }
-    if (TERMINAL_STATUSES.has(workflow.status)) {
-      return workflow;
-    }
-    if (workflow.status === "PAUSED_BUDGET_APPROVAL") {
-      throw new HttpError(409, "This workflow is paused and awaiting budget approval");
-    }
-
-    const execution = this.execute(workflowId);
-    this.active.set(workflowId, execution);
-    try {
+    await this.start(workflowId);
+    const execution = this.active.get(workflowId);
+    if (execution) {
       await execution;
-    } finally {
-      this.active.delete(workflowId);
     }
     return this.getWorkflow(workflowId);
+  }
+
+  /** Refuse to admit any further task. A task already in flight still finishes. */
+  async stop(workflowId: string): Promise<BudgetWorkflow> {
+    const timestamp = now();
+    await this.store.mutate((database) => {
+      const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
+      if (!workflow) {
+        throw new HttpError(404, "Budget workflow not found");
+      }
+      if (TERMINAL_STATUSES.has(workflow.status)) {
+        return;
+      }
+      workflow.status = "STOPPED";
+      workflow.updatedAt = timestamp;
+      database.budgetEvents.push(
+        makeEvent(workflowId, "STOPPED", timestamp, {
+          consumedTokens: workflow.budgetState.consumedTokens,
+          configuredBudget: workflow.policy.totalTokenBudget,
+          reason: "Stopped by operator request.",
+        }),
+      );
+    });
+    const execution = this.active.get(workflowId);
+    if (execution) {
+      await execution;
+    }
+    return this.getWorkflow(workflowId);
+  }
+
+  /**
+   * Take the agent for the duration of the workflow.
+   *
+   * The workflow and the Playground share one agent and one Codex thread, so a
+   * message sent mid-workflow would append a turn to the same conversation and
+   * spend tokens the budget never sees. Holding `busy` is what prevents that:
+   * `AgentService.sendMessage` already refuses a busy agent.
+   */
+  private async claimAgent(
+    workflowId: string,
+  ): Promise<"claimed" | "already-running" | "finished"> {
+    return this.store.mutate((database) => {
+      const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
+      if (!workflow) {
+        throw new HttpError(404, "Budget workflow not found");
+      }
+      if (TERMINAL_STATUSES.has(workflow.status)) {
+        return "finished";
+      }
+      if (workflow.status === "PAUSED_BUDGET_APPROVAL") {
+        throw new HttpError(409, "This workflow is paused and awaiting budget approval");
+      }
+
+      const agent = database.agents.find((item) => item.id === workflow.agentId);
+      if (!agent) {
+        throw new HttpError(404, "Agent not found");
+      }
+      if (agent.status === "busy") {
+        // Our own loop already holds the claim; anything else owns the agent.
+        // Checked before the stale-task guard below, so re-entry joins rather
+        // than tripping over the task this very workflow is running.
+        if (workflow.status === "RUNNING") {
+          return "already-running";
+        }
+        throw new HttpError(409, "This Agent is already running");
+      }
+      if (agent.status === "stopped") {
+        throw new HttpError(409, "Start the Agent before running this workflow");
+      }
+      if (workflow.tasks.some((task) => task.status === "RUNNING")) {
+        throw new HttpError(409, "A task in this workflow is already running");
+      }
+
+      agent.status = "busy";
+      agent.lastError = null;
+      agent.updatedAt = now();
+      workflow.status = "RUNNING";
+      workflow.updatedAt = now();
+      return "claimed";
+    });
+  }
+
+  private async stopForWithdrawnAgent(workflowId: string): Promise<void> {
+    const timestamp = now();
+    await this.store.mutate((database) => {
+      const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
+      if (!workflow || TERMINAL_STATUSES.has(workflow.status)) return;
+      workflow.status = "STOPPED";
+      workflow.updatedAt = timestamp;
+      database.budgetEvents.push(
+        makeEvent(workflowId, "STOPPED", timestamp, {
+          consumedTokens: workflow.budgetState.consumedTokens,
+          configuredBudget: workflow.policy.totalTokenBudget,
+          reason: "The Agent was stopped, so no further task could be admitted.",
+        }),
+      );
+    });
+  }
+
+  private async releaseAgent(workflowId: string): Promise<void> {
+    this.active.delete(workflowId);
+    await this.store.mutate((database) => {
+      const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
+      if (!workflow) return;
+      const agent = database.agents.find((item) => item.id === workflow.agentId);
+      // A concurrent stopAgent wins: never resurrect an agent the operator stopped.
+      if (!agent || agent.status === "stopped") return;
+      const failed = workflow.status === "FAILED";
+      agent.status = failed ? "error" : "ready";
+      agent.lastError = failed
+        ? (workflow.tasks.find((task) => task.error)?.error ?? "Workflow failed")
+        : null;
+      agent.updatedAt = now();
+    });
   }
 
   private async execute(workflowId: string): Promise<void> {
@@ -206,6 +320,16 @@ export class BudgetWorkflowService {
         TERMINAL_STATUSES.has(workflow.status) ||
         workflow.status === "PAUSED_BUDGET_APPROVAL"
       ) {
+        return;
+      }
+
+      // An operator who stops the Agent mid-workflow has withdrawn the runtime,
+      // so no further task may be admitted onto it.
+      const agent = this.store
+        .snapshot()
+        .agents.find((item) => item.id === workflow.agentId);
+      if (!agent || agent.status === "stopped") {
+        await this.stopForWithdrawnAgent(workflowId);
         return;
       }
 

@@ -261,6 +261,107 @@ describe("BudgetWorkflowService", () => {
     expect(runner.callCount).toBe(4);
   });
 
+  it("holds the agent busy for the run and releases it on completion", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runner = new (class extends ScriptedRunner {
+      override async run(request: RunnerRequest): Promise<RunnerResult> {
+        await gate;
+        return super.run(request);
+      }
+    })();
+    const { service, store, agentId } = await makeService(runner);
+
+    const created = await service.create({
+      agentId,
+      prompt: "implement the feature",
+      tokenBudget: 10_000,
+      tasks: plan,
+    });
+
+    // start() returns without waiting for the plan to finish.
+    const started = await service.start(created.id);
+    expect(started.status).toBe("RUNNING");
+    expect(store.snapshot().agents[0]?.status).toBe("busy");
+
+    release();
+    await service.runUntilBlocked(created.id);
+
+    const agent = store.snapshot().agents[0];
+    expect(agent?.status).toBe("ready");
+    expect(agent?.lastError).toBeNull();
+  });
+
+  it("refuses to start when the agent is already busy or stopped", async () => {
+    const { service, store, agentId } = await makeService(new ScriptedRunner());
+    const created = await service.create({
+      agentId,
+      prompt: "implement the feature",
+      tokenBudget: 10_000,
+      tasks: plan,
+    });
+
+    await store.mutate((database) => {
+      const agent = database.agents.find((item) => item.id === agentId);
+      if (agent) agent.status = "busy";
+    });
+    await expect(service.start(created.id)).rejects.toThrow(/already running/i);
+
+    await store.mutate((database) => {
+      const agent = database.agents.find((item) => item.id === agentId);
+      if (agent) agent.status = "stopped";
+    });
+    await expect(service.start(created.id)).rejects.toThrow(/Start the Agent/i);
+  });
+
+  it("leaves the agent in error after a failed workflow", async () => {
+    const runner = new ScriptedRunner(["throw"]);
+    const { service, store, agentId } = await makeService(runner);
+    const created = await service.create({
+      agentId,
+      prompt: "implement the feature",
+      tokenBudget: 10_000,
+      tasks: plan,
+    });
+
+    await service.runUntilBlocked(created.id);
+
+    const agent = store.snapshot().agents[0];
+    expect(agent?.status).toBe("error");
+    expect(agent?.lastError).toContain("Codex exited with code 1");
+  });
+
+  it("stops on request and admits nothing further", async () => {
+    const runner = new ScriptedRunner();
+    const { service, store, agentId } = await makeService(runner);
+    const created = await service.create({
+      agentId,
+      prompt: "implement the feature",
+      tokenBudget: 10_000,
+      tasks: plan,
+    });
+    await service.runUntilBlocked(created.id);
+
+    const stopped = await service.stop(created.id);
+    // Already complete, so a stop is a no-op rather than a state change.
+    expect(stopped.status).toBe("COMPLETED");
+
+    const second = await service.create({
+      agentId,
+      prompt: "another run",
+      tokenBudget: 10_000,
+      tasks: plan,
+    });
+    await service.stop(second.id);
+    const after = await service.runUntilBlocked(second.id);
+
+    expect(after.status).toBe("STOPPED");
+    expect(runner.callCount).toBe(4);
+    expect(store.snapshot().agents[0]?.status).toBe("ready");
+  });
+
   it("rejects an invalid plan and an unusable budget at creation", async () => {
     const { service, agentId } = await makeService(new ScriptedRunner());
 

@@ -134,9 +134,20 @@ export class AgentService {
     await this.cancelExecution(id);
     const archivedWorkspace = await this.workspaces.archive(agent);
     await this.store.mutate((database) => {
+      const orphanedWorkflows = new Set(
+        database.budgetWorkflows
+          .filter((workflow) => workflow.agentId === id)
+          .map((workflow) => workflow.id),
+      );
       database.agents = database.agents.filter((item) => item.id !== id);
       database.messages = database.messages.filter((item) => item.agentId !== id);
       database.runs = database.runs.filter((item) => item.agentId !== id);
+      database.budgetWorkflows = database.budgetWorkflows.filter(
+        (workflow) => !orphanedWorkflows.has(workflow.id),
+      );
+      database.budgetEvents = database.budgetEvents.filter(
+        (event) => !orphanedWorkflows.has(event.workflowId),
+      );
     });
     return { archivedWorkspace };
   }

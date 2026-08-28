@@ -13,7 +13,7 @@ planner and everything that improves the forecast.
 
 ## Progress
 
-**Stage 1 — steps 1–5 of 11 complete.** Next: step 6, agent lock integration.
+**Stage 1 — steps 1–6 of 11 complete.** Next: step 7, API routes.
 
 Nothing is runnable by hand yet. Step 7 is the first end-to-end run drivable from curl;
 step 9 is the first browser demo.
@@ -25,10 +25,11 @@ step 9 is the first browser demo.
 | 3 | Plan schema and workflow model | Done — 9 tests |
 | 4 | Store extension and restart recovery | Done — 3 tests |
 | 5 | Orchestrator | Done — 7 tests |
-| 6 | Agent lock integration | Next |
-| 7–11 | Routes, enforcement tests, UI, hardening, docs | Not started |
+| 6 | Agent lock integration | Done — 4 tests |
+| 7 | API routes | Next — **first end-to-end run** |
+| 8–11 | Enforcement tests, UI, hardening, docs | Not started |
 
-50 tests, 49 passing.
+54 tests, 53 passing.
 
 Known issue: `npm run check` fails on Windows only, in a pre-existing test
 (`container-codex-runner.test.ts:36`) that hardcodes POSIX paths while `config.codexHome`
@@ -210,10 +211,23 @@ task.
 The Playground and a workflow share one thread and one agent. Without a deliberate lock
 they race each other and token accounting silently loses turns.
 
-- [ ] The workflow marks the agent busy for its duration, releasing on pause, stop,
+- [x] The workflow marks the agent busy for its duration, releasing on pause, stop,
       completion, or failure
-- [ ] Return 409 if the agent is already busy when a workflow starts
-- [ ] Detach the loop so the HTTP handler returns immediately
+- [x] Return 409 if the agent is already busy when a workflow starts
+- [x] Detach the loop so the HTTP handler returns immediately
+
+`start()` claims the agent (awaited, so a second caller is rejected rather than racing)
+then runs the loop detached. `runUntilBlocked()` is `start()` plus awaiting the loop, for
+tests. Release sets the agent `ready`, or `error` with the task's message on failure, and
+never resurrects an agent a concurrent `stopAgent` has stopped.
+
+Claim order matters: the "our own loop already holds it" case is checked **before** the
+stale-running-task guard, otherwise re-entry trips over the task the workflow is itself
+running.
+
+Also added here: `stop()`; the loop aborts if the agent is stopped mid-workflow (the
+operator withdrew the runtime); and `deleteAgent` now removes that agent's workflows and
+events rather than orphaning them.
 
 **Exit:** a Playground turn cannot interleave mid-workflow, and starting a run does not
 block the request.
