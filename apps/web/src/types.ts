@@ -38,6 +38,94 @@ export interface AgentRun {
   createdAt: string;
 }
 
+export type BudgetWorkflowStatus =
+  | "PLANNING"
+  | "READY"
+  | "RUNNING"
+  | "PAUSED_BUDGET_APPROVAL"
+  | "COMPLETED"
+  | "STOPPED"
+  | "FAILED";
+
+export type BudgetTaskStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "COMPLETED"
+  | "FAILED"
+  | "SKIPPED";
+
+export type BudgetDecision = "ALLOW" | "WARN" | "PAUSE" | "HARD_STOP" | "COMPLETE";
+
+export interface UsageRecord {
+  inputTokens: number;
+  cachedInputTokens: number;
+  billableInputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface PlannedTask {
+  id: string;
+  index: number;
+  title: string;
+  instruction: string;
+  weight: number;
+  status: BudgetTaskStatus;
+  usage: UsageRecord | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface BudgetState {
+  consumedTokens: number;
+  completedWeight: number;
+  remainingWeight: number;
+  observedTokensPerWeight: number | null;
+  projectedRemainingTokens: number | null;
+  projectedTotalTokens: number | null;
+  budgetUtilization: number;
+  projectedUtilization: number | null;
+  decision: BudgetDecision;
+  reason: string;
+}
+
+export interface BudgetWorkflow {
+  id: string;
+  agentId: string;
+  codexThreadId: string | null;
+  originalPrompt: string;
+  status: BudgetWorkflowStatus;
+  tasks: PlannedTask[];
+  policy: {
+    totalTokenBudget: number;
+    warningRatio: number;
+    pauseRatio: number;
+    hardLimitEnabled: boolean;
+  };
+  budgetState: BudgetState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetEvent {
+  id: string;
+  workflowId: string;
+  type: string;
+  timestamp: string;
+  taskId?: string;
+  consumedTokens?: number;
+  projectedTotalTokens?: number;
+  configuredBudget?: number;
+  reason?: string;
+}
+
+export interface TaskDraft {
+  title: string;
+  instruction: string;
+  weight: number;
+}
+
 export interface SystemInfo {
   arkConfigured: boolean;
   arkBaseUrl: string;

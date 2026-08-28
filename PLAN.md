@@ -13,7 +13,10 @@ planner and everything that improves the forecast.
 
 ## Progress
 
-**Stage 1 — steps 1–8 of 11 complete.** Next: step 9, the browser UI.
+**Stage 1 — steps 1–9 of 11 complete.** Next: step 10, hardening.
+
+**The demo is now runnable in the browser.** Restart the POC to pick up the new build,
+select an Agent, and click **Budgeted run** in the header.
 
 **The backend is now runnable end to end against real Codex.** Start the POC, create an
 agent, then drive a workflow with the six routes below. Step 9 adds the browser UI.
@@ -28,8 +31,9 @@ agent, then drive a workflow with the six routes below. Step 9 adds the browser 
 | 6 | Agent lock integration | Done — 4 tests |
 | 7 | API routes | Done — 4 tests |
 | 8 | Enforcement tests | Done — 8 tests |
-| 9 | Minimum UI | Next — **first browser demo** |
-| 10–11 | Hardening, docs | Not started |
+| 9 | Minimum UI | Done |
+| 10 | Failure handling | Next |
+| 11 | Demo fixtures and docs | Partly — `scripts/demo-budget.sh` exists |
 
 66 tests, 65 passing.
 
@@ -333,12 +337,23 @@ task, and a raised-but-still-insufficient budget refuses to admit anything.
 
 The paused state is the demo. Everything else can be plain numbers.
 
-- [ ] Budget field plus an editable task list — title, instruction, weight
-- [ ] Consumed, projected total, status
-- [ ] Per-task token counts as they land
-- [ ] Paused panel: the four numbers, the reason, and the two buttons
-- [ ] Event history
-- [ ] Poll the workflow endpoint using the existing run-polling pattern
+- [x] Budget field plus an editable task list — title, instruction, weight
+- [x] Consumed, projected total, status
+- [x] Per-task token counts as they land
+- [x] Paused panel: the four numbers, the reason, and the two buttons
+- [x] Event history
+- [x] Poll the workflow endpoint using the existing run-polling pattern
+
+The whole feature lives in `apps/web/src/BudgetRun.tsx`. `App.tsx` gains only a state
+flag, a header toggle, and one render line — the Playground is untouched.
+
+The panel has two faces: a plan editor before a run (seeded with a working demo plan), and
+a live view after. Polling runs only while the status is `READY` or `RUNNING`, so a paused
+or finished run stops hitting the server. On mount it loads the agent's most recent
+workflow, so reloading the page lands back on a paused run rather than losing it.
+
+Because a running workflow marks the agent `busy`, the Playground composer disables itself
+with no extra code — the existing `selected.status === "busy"` guard already covers it.
 
 **Exit:** a viewer who has never seen the code can read why the run stopped.
 

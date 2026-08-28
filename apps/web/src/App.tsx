@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken } from "./api";
+import BudgetRun from "./BudgetRun";
 import type { Agent, AgentRun, Message, SystemInfo } from "./types";
 
 const starterPrompts = [
@@ -42,6 +43,7 @@ export default function App() {
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBudget, setShowBudget] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [prompt, setPrompt] = useState("");
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
@@ -404,6 +406,15 @@ export default function App() {
               </div>
               <div className="header-actions">
                 <button
+                  className={
+                    "button " + (showBudget ? "button-primary" : "button-ghost")
+                  }
+                  onClick={() => setShowBudget((value) => !value)}
+                  disabled={busy}
+                >
+                  Budgeted run
+                </button>
+                <button
                   className="button button-ghost"
                   onClick={() => setShowSettings((value) => !value)}
                   disabled={busy || selected.status === "busy"}
@@ -475,6 +486,10 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            )}
+
+            {showBudget && (
+              <BudgetRun agent={selected} onAgentChanged={() => void refreshAgents()} />
             )}
 
             <section className="playground">

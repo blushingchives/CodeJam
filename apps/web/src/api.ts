@@ -1,4 +1,12 @@
-import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import type {
+  Agent,
+  AgentRun,
+  BudgetEvent,
+  BudgetWorkflow,
+  Message,
+  SystemInfo,
+  TaskDraft,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -78,4 +86,38 @@ export const api = {
       },
     ),
   run: (id: string) => request<{ run: AgentRun }>("/api/runs/" + id),
+
+  budgetWorkflows: (agentId: string) =>
+    request<{ workflows: BudgetWorkflow[] }>(
+      "/api/agents/" + agentId + "/budget-workflows",
+    ),
+  createBudgetWorkflow: (
+    agentId: string,
+    body: { prompt: string; tokenBudget: number; tasks: TaskDraft[] },
+  ) =>
+    request<{ workflow: BudgetWorkflow }>(
+      "/api/agents/" + agentId + "/budget-workflows",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  budgetWorkflow: (id: string) =>
+    request<{ workflow: BudgetWorkflow; events: BudgetEvent[] }>(
+      "/api/budget-workflows/" + id,
+    ),
+  startBudgetWorkflow: (id: string) =>
+    request<{ workflow: BudgetWorkflow }>("/api/budget-workflows/" + id + "/start", {
+      method: "POST",
+    }),
+  setBudget: (id: string, totalTokenBudget: number) =>
+    request<{ workflow: BudgetWorkflow }>("/api/budget-workflows/" + id + "/budget", {
+      method: "POST",
+      body: JSON.stringify({ totalTokenBudget }),
+    }),
+  resumeBudgetWorkflow: (id: string) =>
+    request<{ workflow: BudgetWorkflow }>("/api/budget-workflows/" + id + "/resume", {
+      method: "POST",
+    }),
+  stopBudgetWorkflow: (id: string) =>
+    request<{ workflow: BudgetWorkflow }>("/api/budget-workflows/" + id + "/stop", {
+      method: "POST",
+    }),
 };
