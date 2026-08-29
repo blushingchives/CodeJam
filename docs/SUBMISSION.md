@@ -1,4 +1,4 @@
-# Agent Runway
+# Predictive Rate-limiting Controller
 
 **A budget-governance layer that re-forecasts an agent workflow's token cost after every task and stops for human approval before the run is projected to overspend — not after.**
 
@@ -8,13 +8,13 @@
 
 ## 1. What this is
 
-Agent Runway sits between the control plane and the agent runner. An operator hands it a task broken into weighted sub-tasks. It runs them one at a time on a single Codex thread, measures the real token usage reported after each one, projects what the rest of the plan will cost at the observed rate, and — before it calls the runner for the next task — decides whether to continue, warn, or pause and wait for a human to raise the budget or stop the run.
+The Predictive Rate-limiting Controller sits between the control plane and the agent runner. An operator hands it a task broken into weighted sub-tasks. It runs them one at a time on a single Codex thread, measures the real token usage reported after each one, projects what the rest of the plan will cost at the observed rate, and — before it calls the runner for the next task — decides whether to continue, warn, or pause and wait for a human to raise the budget or stop the run.
 
 The decision point is a pure function with no I/O (`apps/server/src/budget/budget-controller.ts`). Everything that can spend tokens is on the far side of it.
 
 ### Challenge track
 
-Track 1 — Agent Launchpad: design and build lightweight agent middleware. The track is open to any middleware the team chooses, provided it runs in a real backend, runtime, or data path rather than the UI alone. Agent Runway is a trust boundary in the backend data path: it sits between the control plane and the agent runner and decides whether, and when, a run proceeds.
+Track 1 — Agent Launchpad: design and build lightweight agent middleware. The track is open to any middleware the team chooses, provided it runs in a real backend, runtime, or data path rather than the UI alone. The Predictive Rate-limiting Controller is a trust boundary in the backend data path: it sits between the control plane and the agent runner and decides whether, and when, a run proceeds.
 
 ---
 
@@ -22,21 +22,28 @@ Track 1 — Agent Launchpad: design and build lightweight agent middleware. The 
 
 Agent platforms can tell you what a run has already cost. They cannot reliably tell you, before it starts or while it is running, what it is *going* to cost. The Starter Kit is typical: it captures `turn.completed.usage` from Codex and stores per-run token counts (`apps/server/src/codex-runner.ts:63`), but nothing acts on those numbers. A run that is on track to spend five times its intended budget looks identical to one that is on track, until it is over.
 
-Asking the agent to estimate its own cost up front does not close the gap. Recent work measuring LLM agents' self-estimates of token cost found weak correlation with actual spend (Pearson roughly 0.05 to 0.39) and a consistent bias toward underestimating `[cite: add source]`. Industry reports describe a matching pattern in production: a large share of enterprise agentic deployments run over budget, some by more than double, because the tooling reports spend after the fact rather than catching a run mid-overrun `[cite: add source]`.
+Asking the agent to estimate its own cost up front does not close the gap. A systematic study of token consumption in agentic coding tasks found that frontier models predict their own token usage only weakly (Pearson correlations up to about 0.39) and systematically underestimate the real cost ([Bai et al., 2026](https://arxiv.org/abs/2604.22750)). The budgeting picture in production matches: the *2025 State of AI Cost Management* survey found roughly 85% of companies miss their AI cost forecasts by more than 10%, and about a quarter are off by more than 50% ([CFO Dive, 2025](https://www.cfodive.com/news/one-in-four-firms-miss-ai-cost-projections-50percent-or-more-survey/760197/)). The common thread is tooling that reports spend after the fact rather than catching a run mid-overrun.
 
-Agent Runway does not try to predict an absolute cost. It compares the run against its own plan. The operator states, in relative terms, how much of the total effort each sub-task should represent. After each task completes, the middleware knows the real tokens-per-unit-of-planned-effort rate so far, and extrapolates it across the remaining planned effort. If that projection exceeds the budget the operator set, the run pauses. The signal is "this run is spending faster than its plan implied," which needs a plan and a ceiling but not an accurate cost prediction.
+The controller does not try to predict an absolute cost. It compares the run against its own plan. The operator states, in relative terms, how much of the total effort each sub-task should represent. After each task completes, the middleware knows the real tokens-per-unit-of-planned-effort rate so far, and extrapolates it across the remaining planned effort. If that projection exceeds the budget the operator set, the run pauses. The signal is "this run is spending faster than its plan implied," which needs a plan and a ceiling but not an accurate cost prediction.
 
 ---
 
 ## 3. Rationale
 
-**Why not a hard token cap?** A cap answers "have I spent too much yet?" It fires only once the money is gone, and it fires in the middle of a task with no clean stopping point — the agent has half-edited three files and the turn is billed regardless. Agent Runway keeps a hard cap as a backstop (`hardLimitEnabled`, `budget-controller.ts:133`) but the primary signal is the forecast, which can fire *between* tasks, while there is still budget left to make a decision with.
+**Why not a hard token cap?** A cap answers "have I spent too much yet?" It fires only once the money is gone, and it fires in the middle of a task with no clean stopping point — the agent has half-edited three files and the turn is billed regardless. The controller keeps a hard cap as a backstop (`hardLimitEnabled`, `budget-controller.ts:133`) but the primary signal is the forecast, which can fire *between* tasks, while there is still budget left to make a decision with.
 
 **Why not a raw per-turn heuristic** (e.g. "pause if any turn costs more than N tokens")? A fixed per-turn threshold has no notion of how much work the turn was supposed to do. A turn that costs 20k tokens is fine if it was the bulk of the plan and a problem if it was meant to be a quick check. Weighting each task by expected effort is what lets the same overspend be judged differently depending on where in the plan it happens.
 
-**Why earned-value-style tracking specifically.** Earned Value Management, a standard project-controls technique, separates three quantities: planned value, actual cost, and earned value (value of work actually completed). Its forecasting move is to divide remaining planned work by the observed cost-efficiency ratio to get an estimate-at-completion, rather than assuming the original estimate still holds. Agent Runway borrows that structure: `observedTokensPerWeight = consumedTokens / completedWeight`, then `projectedTotal = consumed + observedTokensPerWeight * remainingWeight` (`budget-controller.ts:156`). It re-forecasts from measured reality after every task instead of trusting the initial plan.
+**Why an earned-value-style forecast.** Earned Value Management is a standard project-controls technique for answering one question: *at the rate we are going, what will this finish costing?* You take the cost per unit of work completed so far and apply it to the work still left, instead of trusting the original estimate (GAO, *Cost Estimating and Assessment Guide*, [GAO-20-195G](https://www.gao.gov/products/gao-20-195g), ch. 17). The controller does the same thing with tokens and task weights:
 
-**What it borrows and what it does not.** The lineage is EVM; the implementation is a deliberately thin version of it. There is no cost performance index surfaced as a ratio, no schedule dimension, and the "value of completed work" is the planned weight of tasks whose runner call returned without error — see the limitations section for exactly what that does and does not verify.
+```
+rate           = consumedTokens / completedWeight          // tokens per unit of planned effort, so far
+projectedTotal = consumedTokens + rate * remainingWeight   // that rate applied to what is left
+```
+
+(`budget-controller.ts:156`.) After every task it recomputes `rate` from what actually happened and re-projects the total.
+
+**What it leaves out.** This is a thin slice of EVM: no cost-performance index reported as a ratio, no schedule dimension, and "work completed" only means the task's runner call returned without error — not that the output was checked. Section 8 spells out exactly what that does and does not verify.
 
 ---
 
@@ -122,7 +129,7 @@ parsed by codex-runner.ts:63, normalized by budget/usage.ts, fed back into the f
 | `apps/server/src/types.ts` | `Database` gains `budgetWorkflows` and `budgetEvents`. |
 | `apps/server/src/store.ts` | `withDefaults` defaults the two new arrays on load, so a pre-existing data file still opens. |
 | `apps/server/src/agent-service.ts` | Restart sweep marks a `RUNNING` workflow `FAILED` on boot (`:46`); `deleteAgent` removes that agent's workflows and events (`:137`). The existing `busy` guard in `sendMessage` (`:229`) is what stops the Playground from interleaving a turn mid-workflow. |
-| `apps/server/src/app.ts` | Seven `/api/budget-workflows` routes plus `GET /api/agents/:id/budget-workflows`. |
+| `apps/server/src/app.ts` | Seven budget routes: `GET` and `POST` on `/api/agents/:id/budget-workflows`, and five on `/api/budget-workflows/:id` (`GET`, `/start`, `/budget`, `/resume`, `/stop`). |
 | `apps/server/src/index.ts` | Constructs `BudgetWorkflowService` with the **same** runner instance passed to `AgentService`. |
 | `apps/web/src/App.tsx`, `api.ts`, `types.ts` | A header toggle and one render line; the API client methods; the shared types. The Playground itself is untouched. |
 
@@ -136,6 +143,8 @@ parsed by codex-runner.ts:63, normalized by budget/usage.ts, fed back into the f
 
 Requirements (from the Starter Kit, unchanged): Node.js 22+, npm 10+, one container engine (Docker, Colima, or Podman), and a Volcengine Ark API key with an endpoint that supports the Responses API. Codex CLI ships in the Runtime image.
 
+> The challenge brief calls this model platform **BytePlus ModelArk**. The Starter Kit's code and config name the same service **Volcengine Ark** (`model_provider = "volcengine_ark"`, base URL `ark.cn-beijing.volces.com`) — BytePlus is ByteDance's international brand for it. The `ARK_API_KEY` and `ARK_MODEL` variables are the same either way; this document keeps the code's wording.
+
 ### Run the whole thing locally
 
 ```bash
@@ -145,7 +154,7 @@ ARK_MODEL=ep-your-endpoint-id \
 npm run poc
 ```
 
-`npm run poc` runs `scripts/start-local-poc.sh`, which builds the Runtime image on first run, picks a container engine, and serves the UI at <http://localhost:3000>. State persists between runs under `~/.volc-agent-launchpad/` (macOS) or `.local/` (Linux); override with `LOCAL_POC_DATA_ROOT`.
+`npm run poc` runs `scripts/start-local-poc.sh`, which builds the Runtime image on first run, picks a container engine, and serves the UI at <http://localhost:3000>. State persists between runs under `~/.volc-agent-launchpad/` (macOS) or `<repo>/.local/` (Linux); override with `LOCAL_POC_DATA_ROOT`.
 
 ### Dev mode (two processes, hot reload)
 
@@ -202,7 +211,7 @@ Adapted from `PLAN.md`. Requires `jq`. If `APP_AUTH_TOKEN` is set, add `-H "auth
 ```bash
 AGENT=$(curl -sX POST localhost:3000/api/agents \
   -H 'content-type: application/json' \
-  -d '{"name":"Runway demo"}' | jq -r .agent.id)
+  -d '{"name":"Rate-limit demo"}' | jq -r .agent.id)
 
 WF=$(curl -sX POST localhost:3000/api/agents/$AGENT/budget-workflows \
   -H 'content-type: application/json' -d '{
@@ -258,6 +267,14 @@ So "earned value" here means "planned weight of tasks the runner finished withou
 - **`cachedInputTokens` handling is unverified against a real cached turn.** `normalizeUsage` treats cached input as a subset of input and subtracts it from the billable total. The assumption (cached ⊆ input) is clamped defensively but has not been confirmed against a real second-turn Ark response.
 - **Persistence is a single JSON file** (`JsonStore`), inherited from the Starter Kit. Fine for a single-user POC, not concurrent-safe beyond its internal mutation queue.
 - **No auth on the budget routes beyond the Starter Kit's shared-token check.** Any caller who can reach the API can create, start, and resume workflows.
+
+---
+
+## Sources
+
+- Longju Bai, Zhemin Huang, Xingyao Wang, Jiao Sun, Rada Mihalcea, Erik Brynjolfsson, Alex Pentland, Jiaxin Pei. *How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks.* arXiv:2604.22750, 2026. <https://arxiv.org/abs/2604.22750> — frontier models predict their own token usage only weakly (correlations up to ~0.39) and systematically underestimate real cost; runs on the same task vary by up to 30x.
+- *2025 State of AI Cost Management* (Benchmarkit / Mavvrik), reported in CFO Dive, "One in four firms miss AI cost projections by 50% or more, survey finds," 2025. <https://www.cfodive.com/news/one-in-four-firms-miss-ai-cost-projections-50percent-or-more-survey/760197/> — ~85% of companies miss AI cost forecasts by more than 10%; ~24% by more than 50%.
+- U.S. Government Accountability Office. *Cost Estimating and Assessment Guide.* GAO-20-195G, March 2020, ch. 17 (Earned Value Management). <https://www.gao.gov/products/gao-20-195g> — the EVM forecasting move this design borrows: estimate-at-completion from the observed cost-efficiency rate rather than the original estimate.
 
 ---
 
