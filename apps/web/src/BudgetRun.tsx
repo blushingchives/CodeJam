@@ -136,11 +136,16 @@ export default function BudgetRun({
     if (!workflow || !LIVE_STATUSES.includes(workflow.status)) return;
     const timer = window.setInterval(() => {
       void load(workflow.id)
-        .then(() => onAgentChanged())
+        .then((updated) => {
+          onAgentChanged();
+          if (!LIVE_STATUSES.includes(updated.status)) {
+            void refreshHistory().catch(() => undefined);
+          }
+        })
         .catch(() => undefined);
     }, 1_500);
     return () => window.clearInterval(timer);
-  }, [workflow, load, onAgentChanged]);
+  }, [workflow, load, onAgentChanged, refreshHistory]);
 
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true);
