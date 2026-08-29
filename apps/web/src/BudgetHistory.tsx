@@ -18,6 +18,17 @@ const day = (value: string): string =>
     minute: "2-digit",
   });
 
+const measuredRate = (workflow: BudgetWorkflow): number | null => {
+  let tokens = 0;
+  let weight = 0;
+  for (const task of workflow.tasks) {
+    if (task.status !== "COMPLETED" || task.usage === null) continue;
+    tokens += task.usage.totalTokens;
+    weight += task.weight;
+  }
+  return weight === 0 ? null : tokens / weight;
+};
+
 /**
  * Past runs, and what they taught us.
  *
@@ -36,12 +47,9 @@ export default function BudgetHistory({
 }) {
   if (workflows.length === 0) return null;
 
-  const measured = workflows.filter(
-    (workflow) => workflow.budgetState.observedTokensPerWeight !== null,
-  );
-  const rates = measured.map(
-    (workflow) => workflow.budgetState.observedTokensPerWeight ?? 0,
-  );
+  const rates = workflows
+    .map(measuredRate)
+    .filter((rate): rate is number => rate !== null);
   const averageRate = rates.length
     ? rates.reduce((sum, rate) => sum + rate, 0) / rates.length
     : null;
@@ -111,16 +119,26 @@ export default function BudgetHistory({
             const done = workflow.tasks.filter(
               (task) => task.status === "COMPLETED",
             ).length;
-            const rate = workflow.budgetState.observedTokensPerWeight;
+            const rate = measuredRate(workflow);
             return (
               <tr
                 key={workflow.id}
-                className={workflow.id === currentId ? "history-current" : undefined}
+                className={
+                  "history-row" + (workflow.id === currentId ? " history-current" : "")
+                }
+                role="button"
+                tabIndex={0}
+                aria-label={"Open run started " + day(workflow.createdAt)}
+                onClick={() => onSelect(workflow.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(workflow.id);
+                  }
+                }}
               >
                 <td>
-                  <button className="history-link" onClick={() => onSelect(workflow.id)}>
-                    {day(workflow.createdAt)}
-                  </button>
+                  <span className="history-link">{day(workflow.createdAt)}</span>
                 </td>
                 <td>
                   <span className={"outcome outcome-" + outcome.tone}>

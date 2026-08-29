@@ -66,6 +66,8 @@ export function deriveBudgetInput(workflow: BudgetWorkflow): BudgetInput {
 export class BudgetWorkflowService {
   /** In-flight loops, so a repeated start cannot admit the same task twice. */
   private readonly active = new Map<string, Promise<void>>();
+  /** One-shot operator overrides for a predictive pause; never bypasses HARD_STOP. */
+  private readonly forcedAdmissions = new Set<string>();
 
   constructor(
     private readonly store: JsonStore,
@@ -279,7 +281,7 @@ export class BudgetWorkflowService {
    * current measurements against the current budget, so raising the budget by too
    * little leaves the workflow paused rather than admitting one more task.
    */
-  async resume(workflowId: string): Promise<BudgetWorkflow> {
+  async resume(workflowId: string, forceNextTask = false): Promise<BudgetWorkflow> {
     const timestamp = now();
     const outcome = await this.store.mutate((database) => {
       const workflow = database.budgetWorkflows.find((item) => item.id === workflowId);
@@ -306,7 +308,8 @@ export class BudgetWorkflowService {
         return "completed" as const;
       }
 
-      if (!admitsNextTask(state.decision)) {
+      const mayForceNext = forceNextTask && state.decision === "PAUSE";
+      if (!admitsNextTask(state.decision) && !mayForceNext) {
         database.budgetEvents.push(
           makeEvent(workflowId, "PAUSED", timestamp, {
             consumedTokens: state.consumedTokens,
@@ -328,16 +331,24 @@ export class BudgetWorkflowService {
           ...(state.projectedTotalTokens === null
             ? {}
             : { projectedTotalTokens: state.projectedTotalTokens }),
-          reason: state.reason,
+          reason: mayForceNext
+            ? "Operator approved exactly one task despite the projected overrun. " + state.reason
+            : state.reason,
         }),
       );
-      return "resumed" as const;
+      return mayForceNext ? ("forced" as const) : ("resumed" as const);
     });
 
-    if (outcome !== "resumed") {
+    if (outcome !== "resumed" && outcome !== "forced") {
       return this.getWorkflow(workflowId);
     }
-    return this.start(workflowId);
+    if (outcome === "forced") this.forcedAdmissions.add(workflowId);
+    try {
+      return await this.start(workflowId);
+    } catch (error) {
+      this.forcedAdmissions.delete(workflowId);
+      throw error;
+    }
   }
 
   /**
@@ -448,8 +459,10 @@ export class BudgetWorkflowService {
 
       const state = evaluateBudget(deriveBudgetInput(workflow));
       const next = workflow.tasks.find((task) => task.status === "PENDING");
+      const forceNext =
+        state.decision === "PAUSE" && this.forcedAdmissions.delete(workflowId);
 
-      if (!admitsNextTask(state.decision) || !next) {
+      if ((!admitsNextTask(state.decision) && !forceNext) || !next) {
         await this.settle(workflowId, state);
         return;
       }

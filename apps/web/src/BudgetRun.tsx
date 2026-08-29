@@ -169,9 +169,16 @@ export default function BudgetRun({
     act(async () => {
       if (!workflow) return;
       await api.setBudget(workflow.id, Number(increaseInput));
-      await api.resumeBudgetWorkflow(workflow.id);
+      await api.resumeBudgetWorkflow(workflow.id, true);
       await load(workflow.id);
       setIncreaseInput("");
+    });
+
+  const forceNextTask = () =>
+    act(async () => {
+      if (!workflow) return;
+      await api.resumeBudgetWorkflow(workflow.id, true);
+      await load(workflow.id);
     });
 
   const stopRun = () =>
@@ -399,18 +406,23 @@ export default function BudgetRun({
           <div className="approval-actions">
             <input
               type="number"
-              min={state.consumedTokens}
-              placeholder={"New budget, at least " + tokens(state.consumedTokens)}
+              min={Math.max(state.consumedTokens, budget) + 1}
+              placeholder={"New budget, above " + tokens(Math.max(state.consumedTokens, budget))}
               value={increaseInput}
               onChange={(event) => setIncreaseInput(event.target.value)}
             />
             <button
               className="button button-primary"
               onClick={approve}
-              disabled={busy || !Number(increaseInput)}
+              disabled={busy || Number(increaseInput) <= Math.max(state.consumedTokens, budget)}
             >
               Increase budget and resume
             </button>
+            {state.decision === "PAUSE" && (
+              <button className="button" onClick={forceNextTask} disabled={busy}>
+                Run next task anyway
+              </button>
+            )}
             <button className="button button-danger" onClick={stopRun} disabled={busy}>
               Stop
             </button>

@@ -80,6 +80,10 @@ describe("evaluateBudget", () => {
     });
 
     expect(state.decision).toBe("HARD_STOP");
+    expect(state.observedTokensPerWeight).toBe(20);
+    expect(state.projectedRemainingTokens).toBe(100);
+    expect(state.projectedTotalTokens).toBe(200);
+    expect(state.projectedUtilization).toBe(2);
     expect(admitsNextTask(state.decision)).toBe(false);
   });
 

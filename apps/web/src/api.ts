@@ -112,9 +112,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ totalTokenBudget }),
     }),
-  resumeBudgetWorkflow: (id: string) =>
+  resumeBudgetWorkflow: (id: string, forceNextTask = false) =>
     request<{ workflow: BudgetWorkflow }>("/api/budget-workflows/" + id + "/resume", {
       method: "POST",
+      body: JSON.stringify({ forceNextTask }),
     }),
   stopBudgetWorkflow: (id: string) =>
     request<{ workflow: BudgetWorkflow }>("/api/budget-workflows/" + id + "/stop", {

@@ -32,6 +32,9 @@ const createBudgetWorkflowBody = z.object({
 const budgetUpdateBody = z.object({
   totalTokenBudget: z.number().int().positive(),
 });
+const resumeBudgetWorkflowBody = z.object({
+  forceNextTask: z.boolean().optional().default(false),
+});
 
 export async function createApp(
   config: AppConfig,
@@ -179,7 +182,8 @@ export async function createApp(
 
   app.post("/api/budget-workflows/:id/resume", async (request, reply) => {
     const { id } = runIdParams.parse(request.params);
-    const workflow = await budgetWorkflows.resume(id);
+    const { forceNextTask } = resumeBudgetWorkflowBody.parse(request.body ?? {});
+    const workflow = await budgetWorkflows.resume(id, forceNextTask);
     return reply.code(202).send({ workflow });
   });
 

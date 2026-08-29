@@ -144,6 +144,21 @@ describe("Trust boundary: the runner is unreachable without admission", () => {
     expect(service.getWorkflow(workflowId).status).toBe("COMPLETED");
   });
 
+  it("allows one explicit predictive-pause override", async () => {
+    const runner = new SpyRunner([
+      { inputTokens: 4_000, outputTokens: 200 },
+      { inputTokens: 900, outputTokens: 100 },
+    ]);
+    const { service, workflowId } = await pausedWorkflow(runner);
+
+    await service.resume(workflowId, true);
+    await service.runUntilBlocked(workflowId);
+
+    expect(runner.callCount).toBe(2);
+    expect(service.getWorkflow(workflowId).status).toBe("PAUSED_BUDGET_APPROVAL");
+    expect(service.getWorkflow(workflowId).tasks[1]?.status).toBe("COMPLETED");
+  });
+
   it("halts admission on the hard limit, and stays recoverable", async () => {
     // One task outspends the whole budget. Prediction cannot catch this: the
     // check happens between tasks, and nothing caps a single turn.
@@ -164,7 +179,7 @@ describe("Trust boundary: the runner is unreachable without admission", () => {
 
     // No further task is admitted while the hard limit stands.
     await expect(service.start(created.id)).rejects.toThrow(/paused/i);
-    await service.resume(created.id);
+    await service.resume(created.id, true);
     expect(runner.callCount).toBe(1);
 
     // Raising the budget clears the hard limit and the forecast takes over.

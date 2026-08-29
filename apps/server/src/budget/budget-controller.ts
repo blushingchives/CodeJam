@@ -131,9 +131,25 @@ export function evaluateBudget(input: BudgetInput): BudgetState {
   }
 
   if (policy.hardLimitEnabled && consumedTokens >= policy.totalTokenBudget) {
+    const observedTokensPerWeight =
+      completedWeight === 0 ? null : consumedTokens / completedWeight;
+    const projectedRemainingTokens =
+      observedTokensPerWeight === null
+        ? null
+        : Math.round(observedTokensPerWeight * remainingWeight);
+    const projectedTotalTokens =
+      projectedRemainingTokens === null
+        ? null
+        : consumedTokens + projectedRemainingTokens;
     return {
       ...base,
-      ...withoutForecast,
+      observedTokensPerWeight,
+      projectedRemainingTokens,
+      projectedTotalTokens,
+      projectedUtilization:
+        projectedTotalTokens === null
+          ? null
+          : projectedTotalTokens / policy.totalTokenBudget,
       decision: "HARD_STOP",
       reason:
         "Consumed " +
