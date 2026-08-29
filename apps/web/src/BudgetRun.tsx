@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import BudgetChart from "./BudgetChart";
+import BudgetHistory from "./BudgetHistory";
 import type {
   Agent,
   BudgetEvent,
@@ -42,11 +44,18 @@ const tokens = (value: number | null | undefined): string =>
 
 const taskMark: Record<PlannedTask["status"], string> = {
   COMPLETED: "✓",
-  RUNNING: "▶",
+  RUNNING: "",
   PENDING: "○",
   FAILED: "✕",
   SKIPPED: "–",
 };
+
+function TaskMark({ status }: { status: PlannedTask["status"] }) {
+  if (status === "RUNNING") {
+    return <span className="spinner" role="status" aria-label="Task running" />;
+  }
+  return <span aria-hidden="true">{taskMark[status]}</span>;
+}
 
 function statusLabel(workflow: BudgetWorkflow): string {
   switch (workflow.status) {
@@ -77,6 +86,7 @@ export default function BudgetRun({
   onAgentChanged: () => void;
 }) {
   const [workflow, setWorkflow] = useState<BudgetWorkflow | null>(null);
+  const [history, setHistory] = useState<BudgetWorkflow[]>([]);
   const [events, setEvents] = useState<BudgetEvent[]>([]);
   const [draft, setDraft] = useState<TaskDraft[]>(defaultPlan);
   const [budgetInput, setBudgetInput] = useState("20000");
@@ -100,19 +110,24 @@ export default function BudgetRun({
     return result.workflow;
   }, []);
 
+  const refreshHistory = useCallback(async () => {
+    const result = await api.budgetWorkflows(agent.id);
+    if (mounted.current) setHistory(result.workflows);
+    return result.workflows;
+  }, [agent.id]);
+
   // Pick up the agent's most recent run, so a reload lands back on a paused run.
   useEffect(() => {
     setWorkflow(null);
     setEvents([]);
     setError(null);
-    void api
-      .budgetWorkflows(agent.id)
-      .then((result) => {
-        const latest = result.workflows[0];
+    void refreshHistory()
+      .then((workflows) => {
+        const latest = workflows[0];
         if (latest && mounted.current) void load(latest.id);
       })
       .catch(() => undefined);
-  }, [agent.id, load]);
+  }, [refreshHistory, load]);
 
   // Poll only while the backend can still change state on its own.
   useEffect(() => {
@@ -131,6 +146,7 @@ export default function BudgetRun({
     try {
       await action();
       onAgentChanged();
+      await refreshHistory().catch(() => undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -179,6 +195,7 @@ export default function BudgetRun({
 
   if (!workflow) {
     return (
+      <>
       <section className="budget-panel">
         <div className="budget-head">
           <div>
@@ -312,19 +329,21 @@ export default function BudgetRun({
           </button>
         </div>
       </section>
+      <BudgetHistory
+        workflows={history}
+        currentId={null}
+        onSelect={(id) => void load(id).catch(() => undefined)}
+      />
+      </>
     );
   }
 
   const state = workflow.budgetState;
   const budget = workflow.policy.totalTokenBudget;
   const paused = workflow.status === "PAUSED_BUDGET_APPROVAL";
-  const consumedShare = Math.min(100, (state.consumedTokens / budget) * 100);
-  const projectedShare = Math.min(
-    100 - consumedShare,
-    ((state.projectedRemainingTokens ?? 0) / budget) * 100,
-  );
 
   return (
+    <>
     <section className={"budget-panel" + (paused ? " budget-panel-paused" : "")}>
       <div className="budget-head">
         <div>
@@ -347,10 +366,7 @@ export default function BudgetRun({
         </div>
       </div>
 
-      <div className="budget-bar" aria-hidden="true">
-        <div className="budget-bar-consumed" style={{ width: consumedShare + "%" }} />
-        <div className="budget-bar-projected" style={{ width: projectedShare + "%" }} />
-      </div>
+      <BudgetChart workflow={workflow} events={events} />
       <p className="budget-reason">{state.reason}</p>
 
       {error && (
@@ -403,11 +419,16 @@ export default function BudgetRun({
       )}
 
       <ol className="budget-tasks">
-        {workflow.tasks.map((task) => (
+        {workflow.tasks.map((task, index) => (
           <li key={task.id} className={"budget-task budget-task-" + task.status}>
-            <span className="budget-task-mark">{taskMark[task.status]}</span>
-            <span className="budget-task-weight">w{task.weight}</span>
-            <span className="budget-task-title">{task.title}</span>
+            <span className="budget-task-mark">
+              <TaskMark status={task.status} />
+            </span>
+            <span className="budget-task-weight">W{index + 1}</span>
+            <span className="budget-task-title">
+              {task.title}
+              <small>{task.weight} weight {task.weight === 1 ? "unit" : "units"}</small>
+            </span>
             <span className="budget-task-usage">
               {task.usage ? tokens(task.usage.totalTokens) + " tokens" : ""}
               {task.error ? task.error : ""}
@@ -441,5 +462,11 @@ export default function BudgetRun({
         )}
       </div>
     </section>
+    <BudgetHistory
+      workflows={history}
+      currentId={workflow.id}
+      onSelect={(id) => void load(id).catch(() => undefined)}
+    />
+    </>
   );
 }

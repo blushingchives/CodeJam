@@ -1343,6 +1343,14 @@ textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.budget-task-title small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .budget-task-usage {
   font-variant-numeric: tabular-nums;
   color: var(--muted);
@@ -1399,4 +1407,328 @@ textarea:focus {
   font-size: 12px;
   color: var(--muted);
   word-break: break-word;
+}
+
+/* ---------- Budget chart ---------- */
+
+.budget-chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.budget-chart svg {
+  display: block;
+  width: 100%;
+  /* Cap the rendered size: the viewBox scales text as well as geometry, so an
+     unconstrained width blows the labels up along with the plot. */
+  max-width: 860px;
+  height: auto;
+  overflow: hidden;
+}
+
+.budget-chart figcaption {
+  width: min(100%, 860px);
+  margin-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chart-plot-background {
+  fill: #faf9f6;
+  stroke: #ebe9e2;
+  stroke-width: 1;
+}
+
+.chart-area {
+  fill: url(#chart-area);
+  pointer-events: none;
+}
+
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-axis {
+  stroke: #c9c8c0;
+  stroke-width: 1;
+}
+
+.chart-tick {
+  fill: var(--muted);
+  font-size: 10px;
+  text-anchor: end;
+}
+
+.chart-tick-end {
+  text-anchor: end;
+}
+
+.chart-actual {
+  fill: none;
+  stroke: var(--purple);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-forecast {
+  stroke: var(--purple);
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+  opacity: 0.55;
+}
+
+.chart-point {
+  fill: var(--purple);
+  stroke: var(--paper);
+  stroke-width: 2;
+}
+
+.chart-budget-rule {
+  stroke: var(--red);
+  stroke-width: 2;
+}
+
+.chart-projected-rule {
+  stroke: var(--purple);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+  opacity: 0.5;
+}
+
+.chart-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chart-label-budget {
+  fill: var(--red);
+}
+
+.chart-label-projected {
+  fill: var(--muted);
+}
+
+.chart-label-actual {
+  fill: var(--ink);
+}
+
+/* ---------- History ---------- */
+
+.budget-history {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  padding: 24px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.budget-history .budget-figures {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.budget-history .budget-figures div {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.history-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0 10px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-table td {
+  padding: 9px 10px 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-table .numeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.history-current td {
+  background: var(--purple-soft);
+}
+
+.history-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--purple);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.outcome {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.outcome-good {
+  background: #e6f3ec;
+  color: #1f6b4f;
+  border-color: #bfe0d0;
+}
+
+.outcome-warning {
+  background: #fdf6e7;
+  color: #8a6414;
+  border-color: #e4c88a;
+}
+
+.outcome-critical {
+  background: #fbeaea;
+  color: #973939;
+  border-color: #e8bcbc;
+}
+
+.outcome-active {
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+  border-color: #cdc4f3;
+}
+
+.outcome-muted {
+  background: #efeeea;
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+.chart-step {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.chart-step-done {
+  stroke: #cdc4f3;
+  stroke-dasharray: none;
+}
+
+.chart-step-label {
+  fill: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.chart-step-index {
+  fill: #6f6f69;
+  font-size: 8px;
+  text-anchor: middle;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chart-surface {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.chart-crosshair {
+  stroke: var(--ink);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.35;
+}
+
+.chart-segment-hover {
+  fill: var(--purple);
+  opacity: 0.08;
+}
+
+.chart-hover-dot {
+  fill: var(--purple);
+  stroke: var(--paper);
+  stroke-width: 2;
+}
+
+.chart-hover-dot-forecast {
+  fill: var(--paper);
+  stroke: var(--purple);
+}
+
+.chart-tooltip {
+  fill: var(--ink);
+  opacity: 0.94;
+  filter: drop-shadow(0 6px 12px rgba(28, 27, 24, 0.18));
+}
+
+.chart-tooltip-title {
+  fill: #d9d8d2;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.chart-tooltip-value {
+  fill: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip-row {
+  fill: #cfcec8;
+  font-size: 10px;
+}
+
+.chart-tooltip-number {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip-variance {
+  fill: #91d6b5;
+  font-size: 10px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip-variance.is-over {
+  fill: #ffaaa2;
+}
+
+.chart-tooltip-variance.is-under {
+  fill: #91d6b5;
+}
+
+.chart-tooltip-badge {
+  fill: #ffb7b0;
+  font-size: 8px;
+  font-weight: 700;
+  text-anchor: end;
+  letter-spacing: 0.08em;
+}
+
+.chart-hover {
+  pointer-events: none;
 }
