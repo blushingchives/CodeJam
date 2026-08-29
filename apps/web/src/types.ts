@@ -95,6 +95,9 @@ export interface BudgetWorkflow {
   agentId: string;
   codexThreadId: string | null;
   originalPrompt: string;
+  planSource?: "OPERATOR" | "PLANNER";
+  planningUsage?: UsageRecord | null;
+  planningError?: string | null;
   status: BudgetWorkflowStatus;
   tasks: PlannedTask[];
   policy: {

@@ -10,7 +10,7 @@ import type {
   TaskDraft,
 } from "./types";
 
-const LIVE_STATUSES = ["READY", "RUNNING"];
+const LIVE_STATUSES = ["RUNNING"];
 
 const defaultPlan: TaskDraft[] = [
   {
@@ -90,6 +90,8 @@ export default function BudgetRun({
   const [events, setEvents] = useState<BudgetEvent[]>([]);
   const [draft, setDraft] = useState<TaskDraft[]>(defaultPlan);
   const [budgetInput, setBudgetInput] = useState("20000");
+  const [planMode, setPlanMode] = useState<"planner" | "manual">("planner");
+  const [objective, setObjective] = useState("");
   const [increaseInput, setIncreaseInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +164,33 @@ export default function BudgetRun({
         tasks: draft,
       });
       await api.startBudgetWorkflow(created.workflow.id);
+      await load(created.workflow.id);
+    });
+
+  const generatePlan = () =>
+    act(async () => {
+      const created = await api.createBudgetWorkflow(agent.id, {
+        prompt: objective,
+        tokenBudget: Number(budgetInput),
+      });
+      await load(created.workflow.id);
+    });
+
+  const startReadyWorkflow = () =>
+    act(async () => {
+      if (!workflow) return;
+      await api.startBudgetWorkflow(workflow.id);
+      await load(workflow.id);
+    });
+
+  const regeneratePlan = () =>
+    act(async () => {
+      if (!workflow) return;
+      await api.stopBudgetWorkflow(workflow.id);
+      const created = await api.createBudgetWorkflow(agent.id, {
+        prompt: workflow.originalPrompt,
+        tokenBudget: workflow.policy.totalTokenBudget,
+      });
       await load(created.workflow.id);
     });
 
@@ -255,7 +284,24 @@ export default function BudgetRun({
           />
         </label>
 
-        <div className="plan-editor">
+        <div className="plan-mode" role="group" aria-label="Planning method">
+          <button className={"button " + (planMode === "planner" ? "button-primary" : "button-ghost")} onClick={() => setPlanMode("planner")}>Generate plan</button>
+          <button className={"button " + (planMode === "manual" ? "button-primary" : "button-ghost")} onClick={() => setPlanMode("manual")}>Manual plan</button>
+        </div>
+
+        {planMode === "planner" && (
+          <div className="planner-input">
+            <label>
+              <span>What should the workflow accomplish?</span>
+              <textarea rows={4} value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Describe the feature or change to plan." />
+            </label>
+            <button className="button button-primary" onClick={generatePlan} disabled={busy || agent.status !== "ready" || !objective.trim() || !Number(budgetInput)}>
+              {busy ? "Planning…" : "Generate plan"}
+            </button>
+          </div>
+        )}
+
+        <div className={"plan-editor" + (planMode === "manual" ? "" : " is-hidden")}>
           {draft.map((task, index) => (
             <div className="plan-row" key={index}>
               <input
@@ -313,7 +359,7 @@ export default function BudgetRun({
           ))}
         </div>
 
-        <div className="budget-actions">
+        <div className={"budget-actions" + (planMode === "manual" ? "" : " is-hidden")}>
           <button
             className="button button-ghost"
             onClick={() =>
@@ -375,6 +421,28 @@ export default function BudgetRun({
 
       <BudgetChart workflow={workflow} events={events} />
       <p className="budget-reason">{state.reason}</p>
+
+      {workflow.planSource === "PLANNER" && workflow.status === "READY" && (
+        <div className="planner-review">
+          <div className="planner-review-head">
+            <div>
+              <span className="eyebrow">Generated plan</span>
+              <strong>Review before execution</strong>
+            </div>
+            <span>{tokens(workflow.planningUsage?.totalTokens)} planning tokens · excluded from budget</span>
+          </div>
+          <pre>{JSON.stringify({ tasks: workflow.tasks.map(({ title, instruction, weight }) => ({ title, instruction, weight })) }, null, 2)}</pre>
+          <div className="budget-actions">
+            <button className="button button-ghost" onClick={newRun}>Cancel</button>
+            <button className="button" onClick={regeneratePlan} disabled={busy || agent.status !== "ready"}>Regenerate plan</button>
+            <button className="button button-primary" onClick={startReadyWorkflow} disabled={busy || agent.status !== "ready"}>Start workflow</button>
+          </div>
+        </div>
+      )}
+
+      {workflow.planSource === "PLANNER" && workflow.status === "FAILED" && workflow.planningError && (
+        <div className="error-banner" role="alert">Planning failed: {workflow.planningError}</div>
+      )}
 
       {error && (
         <div className="error-banner" role="alert">
@@ -462,7 +530,7 @@ export default function BudgetRun({
       </details>
 
       <div className="budget-actions">
-        {!LIVE_STATUSES.includes(workflow.status) && !paused && (
+        {!LIVE_STATUSES.includes(workflow.status) && workflow.status !== "READY" && !paused && (
           <button className="button button-ghost" onClick={newRun}>
             Plan another run
           </button>

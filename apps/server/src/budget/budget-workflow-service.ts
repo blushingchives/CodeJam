@@ -10,6 +10,7 @@ import {
   type BudgetInput,
 } from "./budget-controller.js";
 import { parsePlan } from "./plan-schema.js";
+import { CodexPlanner } from "./planner.js";
 import type {
   BudgetEvent,
   BudgetEventType,
@@ -27,7 +28,7 @@ export interface CreateBudgetWorkflowInput {
   prompt: string;
   tokenBudget: number;
   /** Validated here rather than by the caller, so every source is checked alike. */
-  tasks: unknown;
+  tasks?: unknown;
 }
 
 /**
@@ -100,6 +101,7 @@ export class BudgetWorkflowService {
   }
 
   async create(input: CreateBudgetWorkflowInput): Promise<BudgetWorkflow> {
+    if (input.tasks === undefined) return this.createWithPlanner(input);
     const plan = parsePlan(input.tasks);
     if (!plan.ok) {
       throw new HttpError(400, "Invalid plan: " + plan.errors.join("; "));
@@ -129,6 +131,9 @@ export class BudgetWorkflowService {
       agentId: input.agentId,
       codexThreadId: null,
       originalPrompt: input.prompt,
+      planSource: "OPERATOR",
+      planningUsage: null,
+      planningError: null,
       status: "READY",
       tasks,
       policy,
@@ -164,6 +169,96 @@ export class BudgetWorkflowService {
       );
       return structuredClone(workflow);
     });
+  }
+
+  private async createWithPlanner(input: CreateBudgetWorkflowInput): Promise<BudgetWorkflow> {
+    if (!canApplyBudget(input.tokenBudget, 0)) {
+      throw new HttpError(400, "A token budget must be a positive number");
+    }
+    const timestamp = now();
+    const workflowId = randomUUID();
+    const policy = { ...DEFAULT_BUDGET_POLICY, totalTokenBudget: input.tokenBudget };
+    const initial: BudgetWorkflow = {
+      id: workflowId,
+      agentId: input.agentId,
+      codexThreadId: null,
+      originalPrompt: input.prompt,
+      planSource: "PLANNER",
+      planningUsage: null,
+      planningError: null,
+      status: "PLANNING",
+      tasks: [],
+      policy,
+      budgetState: evaluateBudget({ policy, consumedTokens: 0, completedWeight: 0, remainingWeight: 0 }),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const agent = await this.store.mutate((database) => {
+      const found = database.agents.find((item) => item.id === input.agentId);
+      if (!found) throw new HttpError(404, "Agent not found");
+      if (found.status !== "ready") throw new HttpError(409, "Agent is not ready for planning");
+      found.status = "busy";
+      found.updatedAt = timestamp;
+      database.budgetWorkflows.push(initial);
+      database.budgetEvents.push(
+        makeEvent(workflowId, "WORKFLOW_CREATED", timestamp, {
+          configuredBudget: policy.totalTokenBudget,
+          reason: "Workflow created for automatic planning.",
+        }),
+        makeEvent(workflowId, "PLANNING_STARTED", timestamp, {
+          reason: "Read-only workspace planning started.",
+        }),
+      );
+      return structuredClone(found);
+    });
+
+    try {
+      const result = await new CodexPlanner(this.runner).plan({
+        agentId: agent.id,
+        workspacePath: agent.workspacePath,
+        objective: input.prompt,
+        threadId: agent.codexThreadId,
+      });
+      return this.store.mutate((database) => {
+        const workflow = database.budgetWorkflows.find((item) => item.id === workflowId)!;
+        const storedAgent = database.agents.find((item) => item.id === input.agentId)!;
+        workflow.tasks = result.tasks.map((task, index) => ({
+          id: randomUUID(), index, ...task, status: "PENDING", usage: null,
+          error: null, startedAt: null, completedAt: null,
+        }));
+        workflow.codexThreadId = result.threadId;
+        workflow.planningUsage = result.usage;
+        workflow.status = "READY";
+        workflow.budgetState = evaluateBudget({
+          policy,
+          consumedTokens: 0,
+          completedWeight: 0,
+          remainingWeight: workflow.tasks.reduce((sum, task) => sum + task.weight, 0),
+        });
+        workflow.updatedAt = now();
+        storedAgent.codexThreadId = result.threadId;
+        storedAgent.status = "ready";
+        storedAgent.updatedAt = workflow.updatedAt;
+        if (result.retried) database.budgetEvents.push(makeEvent(workflowId, "PLANNING_RETRY", workflow.updatedAt, { reason: "Planner output required one validation retry." }));
+        database.budgetEvents.push(makeEvent(workflowId, "PLAN_CREATED", workflow.updatedAt, {
+          reason: "Planner-generated plan: " + workflow.tasks.length + " tasks.",
+        }));
+        return structuredClone(workflow);
+      });
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      return this.store.mutate((database) => {
+        const workflow = database.budgetWorkflows.find((item) => item.id === workflowId)!;
+        const storedAgent = database.agents.find((item) => item.id === input.agentId)!;
+        workflow.status = "FAILED";
+        workflow.planningError = message;
+        workflow.updatedAt = now();
+        storedAgent.status = "ready";
+        storedAgent.updatedAt = workflow.updatedAt;
+        database.budgetEvents.push(makeEvent(workflowId, "PLANNING_FAILED", workflow.updatedAt, { reason: message }));
+        return structuredClone(workflow);
+      });
+    }
   }
 
   /**

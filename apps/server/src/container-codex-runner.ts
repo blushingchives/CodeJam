@@ -84,7 +84,11 @@ export function buildContainerRunArgs(
     "/workspace",
     config.containerRuntimeImage,
     "codex",
-    ...buildCodexArgs(request, config.codexSandboxMode, "/workspace"),
+    ...buildCodexArgs(
+      request,
+      request.sandboxMode ?? config.codexSandboxMode,
+      "/workspace",
+    ),
   ];
 }
 

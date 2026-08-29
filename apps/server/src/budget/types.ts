@@ -23,6 +23,9 @@ export type BudgetTaskStatus =
 
 export type BudgetEventType =
   | "WORKFLOW_CREATED"
+  | "PLANNING_STARTED"
+  | "PLANNING_RETRY"
+  | "PLANNING_FAILED"
   | "PLAN_CREATED"
   | "TASK_STARTED"
   | "TASK_COMPLETED"
@@ -64,6 +67,9 @@ export interface BudgetWorkflow {
   codexThreadId: string | null;
 
   originalPrompt: string;
+  planSource?: "OPERATOR" | "PLANNER";
+  planningUsage?: UsageRecord | null;
+  planningError?: string | null;
   status: BudgetWorkflowStatus;
 
   tasks: PlannedTask[];

@@ -93,7 +93,7 @@ export const api = {
     ),
   createBudgetWorkflow: (
     agentId: string,
-    body: { prompt: string; tokenBudget: number; tasks: TaskDraft[] },
+    body: { prompt: string; tokenBudget: number; tasks?: TaskDraft[] },
   ) =>
     request<{ workflow: BudgetWorkflow }>(
       "/api/agents/" + agentId + "/budget-workflows",

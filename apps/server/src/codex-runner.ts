@@ -129,7 +129,10 @@ export class CodexRunner implements AgentRunner {
       throw new Error("Agent already has an active Codex process");
     }
 
-    const args = buildCodexArgs(request, this.config.codexSandboxMode);
+    const args = buildCodexArgs(
+      request,
+      request.sandboxMode ?? this.config.codexSandboxMode,
+    );
     const child = spawn(this.config.codexBin, args, {
       cwd: request.workspacePath,
       env: this.childEnvironment(),

@@ -77,6 +77,7 @@ export interface RunnerRequest {
   workspacePath: string;
   prompt: string;
   threadId: string | null;
+  sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
 }
 
 export interface AgentRunner {

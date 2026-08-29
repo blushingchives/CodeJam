@@ -27,7 +27,7 @@ const createBudgetWorkflowBody = z.object({
   prompt: z.string().trim().min(1).max(50_000),
   tokenBudget: z.number().int().positive(),
   // Left unknown here so plan validation reports which task and field is wrong.
-  tasks: z.unknown(),
+  tasks: z.unknown().optional(),
 });
 const budgetUpdateBody = z.object({
   totalTokenBudget: z.number().int().positive(),

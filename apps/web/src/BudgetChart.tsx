@@ -44,17 +44,23 @@ export default function BudgetChart({
 
   // Cumulative spend at each measured task, and every task boundary for the axis.
   const points: Point[] = [{ weight: 0, tokens: 0, title: "Start" }];
-  const boundaries: Array<{ weight: number; title: string; measured: boolean }> = [];
+  const boundaries: Array<{
+    startWeight: number;
+    weight: number;
+    title: string;
+    measured: boolean;
+  }> = [];
   let weight = 0;
   let tokens = 0;
   for (const task of workflow.tasks) {
+    const startWeight = weight;
     weight += task.weight;
     const measuredTask = task.status === "COMPLETED" && task.usage !== null;
     if (measuredTask && task.usage) {
       tokens += task.usage.totalTokens;
       points.push({ weight, tokens, title: task.title });
     }
-    boundaries.push({ weight, title: task.title, measured: measuredTask });
+    boundaries.push({ startWeight, weight, title: task.title, measured: measuredTask });
   }
 
   const measured = points.length > 1;
@@ -65,6 +71,13 @@ export default function BudgetChart({
 
   const x = (value: number) => PAD.left + (value / xMax) * PLOT_W;
   const y = (value: number) => PAD.top + PLOT_H - (value / yMax) * PLOT_H;
+  const segmentTitle = (boundary: (typeof boundaries)[number]): string => {
+    const pixelWidth = x(boundary.weight) - x(boundary.startWeight);
+    const availableCharacters = Math.max(4, Math.floor((pixelWidth - 10) / 4.8));
+    return boundary.title.length > availableCharacters
+      ? boundary.title.slice(0, Math.max(1, availableCharacters - 1)) + "…"
+      : boundary.title;
+  };
 
   const actualPath = points.map((p) => x(p.weight) + "," + y(p.tokens)).join(" ");
   const last = points[points.length - 1] ?? { weight: 0, tokens: 0 };
@@ -180,8 +193,13 @@ export default function BudgetChart({
             <text className="chart-step-label" x={x(boundary.weight)} y={y(0) + 18}>
               {"W" + (index + 1)}
             </text>
-            <text className="chart-step-index" x={x(boundary.weight)} y={y(0) + 32}>
-              {boundary.title}
+            <text
+              className="chart-step-index"
+              x={x((boundary.startWeight + boundary.weight) / 2)}
+              y={y(0) + 32}
+            >
+              <title>{boundary.title}</title>
+              {segmentTitle(boundary)}
             </text>
           </g>
         ))}
