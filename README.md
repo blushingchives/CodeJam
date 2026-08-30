@@ -1,8 +1,24 @@
 # Volc Agent Launchpad
 
-A minimal Agent platform for three-day middleware hackathons. It provides Agent
-CRUD, a browser Playground, persistent workspaces, and Codex CLI backed by the
-Volcengine Ark Responses API.
+## TikTok Hackathon project: Predictive Rate-Limiting Orchestrator
+
+This repository extends the pre-existing Volc Agent Launchpad starter website
+with a **predictive rate-limiting orchestrator for AI agents**. The hackathon
+extension measures token usage as an agent works, forecasts the cost of the
+remaining plan, and pauses new tasks before the workflow is projected to exceed
+its budget. An operator can then raise the budget, resume normally, or
+force-resume exactly one task.
+
+The orchestrator sits between the starter website's user interface and agent
+runtime, making budget admission a trusted backend decision rather than a
+browser-side control. Read the
+[hackathon submission](docs/SUBMISSION.md) for the problem statement, proposed
+solution, and demo scenario. See the
+[BudgetWorkflowService architecture](docs/ARCHITECTURE.md#budgetworkflowservice)
+for the execution flow, enforcement point, and trust boundary.
+
+The starter project provides Agent CRUD, a browser Playground, persistent
+workspaces, and Codex CLI backed by the Volcengine Ark Responses API.
 
 Run it locally with Docker, Colima, or rootless Podman, or deploy it to
 Volcengine ECS.
