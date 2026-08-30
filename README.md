@@ -32,20 +32,7 @@ Volcengine ECS.
 
 ### Agent Playground
 
-![Agent Playground showing lifecycle controls, starter prompts, and the Codex Runtime](docs/assets/playground.jpg)
-
-### Create an Agent
-
-![Create Agent form with name, description, and workspace instructions](docs/assets/create-agent.jpg)
-
-## Features
-
-- React and TypeScript Web UI
-- Agent create, edit, start, stop, delete, and multi-turn chat
-- Fastify control plane with asynchronous Run state
-- Persistent Agent workspaces and Codex sessions
-- Disposable Docker, Colima, or Podman container for each local turn
-- Docker and Terraform deployment paths for Volcengine ECS
+![Predicted usage graph](docs/graph.png)
 
 ## Requirements
 
@@ -213,16 +200,16 @@ cp deploy/volcengine/terraform.tfvars.example \
 
 ## Configuration
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ARK_API_KEY` | Required | Ark model API key. |
-| `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
-| `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
-| `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
-| `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
-| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
-| `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |
-| `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
+| Variable              | Default             | Purpose                                                |
+| --------------------- | ------------------- | ------------------------------------------------------ |
+| `ARK_API_KEY`         | Required            | Ark model API key.                                     |
+| `ARK_MODEL`           | Required            | Responses-capable endpoint or model ID.                |
+| `ARK_BASE_URL`        | Beijing v3 endpoint | Ark OpenAI-compatible API URL.                         |
+| `APP_AUTH_TOKEN`      | Empty on loopback   | Shared demo token; use 24+ random characters remotely. |
+| `RUNTIME_PROVIDER`    | `local-process`     | `container` for disposable local Runtime containers.   |
+| `CODEX_SANDBOX_MODE`  | `workspace-write`   | Codex inner sandbox mode.                              |
+| `CODEX_TIMEOUT_MS`    | `600000`            | Maximum duration of one turn.                          |
+| `LOCAL_POC_DATA_ROOT` | Platform-specific   | Local metadata, workspace, and session directory.      |
 
 See [.env.example](.env.example) for all Runtime and resource-limit options.
 
