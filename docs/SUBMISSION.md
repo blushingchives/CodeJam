@@ -6,21 +6,21 @@
 
 ## 1. Problem Statement
 
-Typical agentic platforms such as Codex and Claude Code provide basic token rate-limiting solutions like Request-Per-Minute (RPM) or Token-Per-Minute (TPM), which while may be sufficient in limiting exessive usage and cost, only restrict usage after the damage has been done.
+Typical agentic platforms such as Codex and Claude Code provide basic token rate-limiting solutions like Request-Per-Minute (RPM) or Token-Per-Minute (TPM), which while may be sufficient in limiting excessive usage and cost, only restrict usage after the damage has been done.
 
 So, if an agent run is on track to consume five times its budget, typical rate-limiting system will only trigger when actual tokens are spent.
 
 Even if agents were asked to estimate its token usage before executing its plan, these estimate would be wildly inaccurate. A study of token consumption in agentic coding tasks found that frontier models predict their own token usage only weakly (Pearson correlations up to about 0.39) and systematically underestimate the real cost ([Bai et al., 2026](https://arxiv.org/abs/2604.22750)).
 
-Therefore, simply asking the agent to estimate its own token usage is irrepresentitive of the actual work that needs to be done.
+Therefore, simply asking the agent to estimate its own token usage is unrepresentitive of the actual work that needs to be done.
 
 ---
 
 ## 2. Proposed Solution
 
-Our proposed solution is a predictive rate-limiting orchastrator middleware that ingests planned tasks with work estimates (similar to a planner-orchestrator system), and re-forecasts the projected workflow's total token usage after every task. If the projected token usage is above the token budget, the workflow will pause and require user confirmation before continuing.
+Our proposed solution is a predictive rate-limiting orchestrator middleware that ingests planned tasks with work estimates (similar to a planner-orchestrator system), and re-forecasts the projected workflow's total token usage after every task. If the projected token usage is above the token budget, the workflow will pause and require user confirmation before continuing.
 
-Unlike asking the planning agent to predict an absolute token cost, planning agents in this system are required to state, in relative terms, how much of the total effort each sub-task should represent. This allows for more flexibility and allows token usage to fluctuate above or below forcasts as long as it is within the budget.
+Unlike asking the planning agent to predict an absolute token cost, planning agents in this system are required to state, in relative terms, how much of the total effort each sub-task should represent. This allows for more flexibility and allows token usage to fluctuate above or below forecasts as long as it is within the budget.
 
 Therefore, this system effectively projects and rate-limits agent executions based on current token usage. Ensuring that usage constraints are enforced before any real damage is done.
 
@@ -31,11 +31,11 @@ Therefore, this system effectively projects and rate-limits agent executions bas
 For this hackathon the main aim was to build out the middleware that provides the token projections, dispatches agents to complete sub-tasks, and rate-limits agent execution. Therefore, several non-essential services were either ignored or simplified.
 
 1. The Planner agent only has a single planning turn, so it does not have an interactive back-and-forth behaviour to clarify requirements.
-2. The orchastrator is built to support a single-agent sequencial workflow. However, the same concept can be integrated into a multi-agent system.
+2. The orchastrator is built to support a single-agent sequential workflow. However, the same concept can be integrated into a multi-agent system.
 
 ---
 
-## 3. Example Use case
+## 4. Example Use case
 
 An operator wants an agent to add a health endpoint to a small service. They decompose it and assign relative weights (integers, 1–10):
 
@@ -58,6 +58,6 @@ Therefore without this middleware, tasks 2–4 would have run and the operator w
 
 ## 5. Architecture
 
-The work on this middleware did not modify the default Starter chat behaviour, but adds ontop of the existing system.
+The work on this middleware did not modify the default Starter chat behaviour, but adds on top of the existing system.
 
 ![Architecture Diagram](./Architecture.png)
