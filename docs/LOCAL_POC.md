@@ -16,6 +16,12 @@ Requirements:
 ARK_API_KEY=your-ark-api-key ARK_MODEL=ep-your-endpoint-id npm run poc
 ```
 
+If the default model endpoint is wrong:
+
+```bash
+ARK_API_KEY=your-ark-api-key ARK_MODEL=ep-your-endpoint-id ARK_BASE_URL=ark-api-endpoint npm run poc
+```
+
 Open <http://localhost:3000>. Press `Ctrl+C` to stop the server and remove this
 instance's remaining Runtime containers.
 
