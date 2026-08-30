@@ -30,7 +30,7 @@ Volcengine ECS.
 
 ## Screenshots
 
-### Agent Playground
+### Budget Workflow Interface
 
 ![Predicted usage graph](docs/graph.png)
 
