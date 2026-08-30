@@ -1309,7 +1309,7 @@ textarea:focus {
 
 .budget-task {
   display: grid;
-  grid-template-columns: 22px 34px 1fr auto;
+  grid-template-columns: 22px 52px 1fr auto;
   gap: 10px;
   align-items: center;
   padding: 9px 2px;
@@ -1347,9 +1347,38 @@ textarea:focus {
   display: none !important;
 }
 
-.plan-mode {
+.segmented-toggle {
   display: flex;
-  gap: 8px;
+  width: fit-content;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #eeece6;
+}
+
+.segmented-toggle button {
+  min-height: 32px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 140ms ease;
+}
+
+.segmented-toggle button:hover {
+  color: var(--ink);
+}
+
+.segmented-toggle button.is-active {
+  background: white;
+  color: var(--purple-dark);
+  box-shadow: 0 1px 4px rgba(42, 37, 69, 0.12);
 }
 
 .planner-input {

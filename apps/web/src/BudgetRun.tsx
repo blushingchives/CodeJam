@@ -118,7 +118,9 @@ export default function BudgetRun({
     return result.workflows;
   }, [agent.id]);
 
-  // Pick up the agent's most recent run, so a reload lands back on a paused run.
+  // Pick up the agent's most recent unfinished run, so a reload lands back on a
+  // paused or active run. Once the latest workflow is complete, opening Budget
+  // Workflow should start at the planning view; its result is still in history.
   useEffect(() => {
     setWorkflow(null);
     setEvents([]);
@@ -126,7 +128,9 @@ export default function BudgetRun({
     void refreshHistory()
       .then((workflows) => {
         const latest = workflows[0];
-        if (latest && mounted.current) void load(latest.id);
+        if (latest && latest.status !== "COMPLETED" && mounted.current) {
+          void load(latest.id);
+        }
       })
       .catch(() => undefined);
   }, [refreshHistory, load]);
@@ -289,9 +293,9 @@ export default function BudgetRun({
           />
         </label>
 
-        <div className="plan-mode" role="group" aria-label="Planning method">
-          <button className={"button " + (planMode === "planner" ? "button-primary" : "button-ghost")} onClick={() => setPlanMode("planner")}>Generate plan</button>
-          <button className={"button " + (planMode === "manual" ? "button-primary" : "button-ghost")} onClick={() => setPlanMode("manual")}>Manual plan</button>
+        <div className="segmented-toggle plan-mode" role="group" aria-label="Planning method">
+          <button className={planMode === "planner" ? "is-active" : ""} onClick={() => setPlanMode("planner")} aria-pressed={planMode === "planner"}>Generate Plan</button>
+          <button className={planMode === "manual" ? "is-active" : ""} onClick={() => setPlanMode("manual")} aria-pressed={planMode === "manual"}>Manual Plan</button>
         </div>
 
         {planMode === "planner" && (
@@ -509,7 +513,7 @@ export default function BudgetRun({
             <span className="budget-task-mark">
               <TaskMark status={task.status} />
             </span>
-            <span className="budget-task-weight">W{index + 1}</span>
+            <span className="budget-task-weight">Task {index + 1}</span>
             <span className="budget-task-title">
               {task.title}
               <small>{task.weight} weight {task.weight === 1 ? "unit" : "units"}</small>

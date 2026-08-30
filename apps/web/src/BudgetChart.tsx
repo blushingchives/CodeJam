@@ -191,7 +191,7 @@ export default function BudgetChart({
               y2={y(0)}
             />
             <text className="chart-step-label" x={x(boundary.weight)} y={y(0) + 18}>
-              {"W" + (index + 1)}
+              {"Task " + (index + 1)}
             </text>
             <text
               className="chart-step-index"
@@ -287,8 +287,8 @@ export default function BudgetChart({
             <g transform={"translate(" + tooltipX + "," + tooltipY + ")"}>
               <rect className="chart-tooltip" width={tooltipWidth} height={tooltipHeight} rx={9} />
               <text className="chart-tooltip-title" x={12} y={20}>
-                {hover.index === 0 ? "Start" : "W" + hover.index}
-                {" → W" + (hover.index + 1) + " · " + hoverTitle}
+                {hover.index === 0 ? "Start" : "Task " + hover.index}
+                {" → Task " + (hover.index + 1) + " · " + hoverTitle}
               </text>
               <text className="chart-tooltip-row" x={12} y={43}>
                 Predicted

@@ -405,15 +405,22 @@ export default function App() {
                 <p>{selected.description || "A Codex coding Agent in an isolated workspace."}</p>
               </div>
               <div className="header-actions">
-                <button
-                  className={
-                    "button " + (showBudget ? "button-primary" : "button-ghost")
-                  }
-                  onClick={() => setShowBudget((value) => !value)}
-                  disabled={busy}
-                >
-                  Budgeted run
-                </button>
+                <div className="segmented-toggle" role="group" aria-label="Agent view">
+                  <button
+                    className={!showBudget ? "is-active" : ""}
+                    onClick={() => setShowBudget(false)}
+                    aria-pressed={!showBudget}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    className={showBudget ? "is-active" : ""}
+                    onClick={() => setShowBudget(true)}
+                    aria-pressed={showBudget}
+                  >
+                    Budget Workflow
+                  </button>
+                </div>
                 <button
                   className="button button-ghost"
                   onClick={() => setShowSettings((value) => !value)}
@@ -488,10 +495,9 @@ export default function App() {
               </form>
             )}
 
-            {showBudget && (
+            {showBudget ? (
               <BudgetRun agent={selected} onAgentChanged={() => void refreshAgents()} />
-            )}
-
+            ) : (
             <section className="playground">
               <div className="playground-topbar">
                 <div>
@@ -597,6 +603,7 @@ export default function App() {
                 </div>
               </form>
             </section>
+            )}
           </>
         ) : (
           <div className="no-agent">
