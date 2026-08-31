@@ -28,10 +28,11 @@ Therefore, this system effectively projects and rate-limits agent executions bas
 
 ## 3. Limitations
 
-For this hackathon the main aim was to build out the middleware that provides the token projections, dispatches agents to complete sub-tasks, and rate-limits agent execution. Therefore, several non-essential services were either ignored or simplified.
+For this hackathon, the primary aim was to build the middleware that provides token projections, dispatches agents to complete sub-tasks, and rate-limits agent execution. As a result, several non-essential services were either ignored or simplified.
 
-1. The Planner agent only has a single planning turn, so it does not have an interactive back-and-forth behaviour to clarify requirements.
-2. The orchastrator is built to support a single-agent sequential workflow. However, the same concept can be integrated into a multi-agent system.
+1. The Planner agent has only a single planning turn, so it does not support an interactive back-and-forth behaviour to clarify requirements.
+2. The solution built for this hackathon focuses solely on the middleware that enforces work estimates. The Planner agent's work-estimate accuracy was a separate problem we deliberately left aside, as tackling both the enforcement middleware and estimate accuracy would have ballooned the scope well beyond the hackathon.
+3. The orchestrator is built to support a single-agent sequential workflow. However, the same concept can be integrated into a multi-agent system.
 
 ---
 
